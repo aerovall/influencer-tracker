@@ -53,6 +53,7 @@ import {
   runVideoDiscovery,
   runViewCountSnapshot,
 } from "./syncEngine";
+import { extractYouTubeVideoId, fetchYouTubeVideoInfo } from "./platformApi";
 
 function todayStr() {
   return new Date().toISOString().split("T")[0]!;
@@ -124,6 +125,16 @@ const videosRouter = router({
     .input(z.object({ videoId: z.string() }))
     .query(({ input }) => getVideoByVideoId(input.videoId)),
 
+  // Fetch YouTube video info by URL without any API key
+  fetchYouTubeInfo: protectedProcedure
+    .input(z.object({ url: z.string() }))
+    .query(async ({ input }) => {
+      const rawId = extractYouTubeVideoId(input.url);
+      if (!rawId) return null;
+      const result = await fetchYouTubeVideoInfo(input.url);
+      return result ?? null;
+    }),
+
   create: protectedProcedure
     .input(z.object({
       influencerName: z.enum(["Levi", "NoBs", "Danielle"]),
@@ -132,9 +143,17 @@ const videosRouter = router({
       title: z.string().min(1),
       publishedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       thumbnailUrl: z.string().optional(),
+      durationSeconds: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
-      const videoId = `manual_${nanoid(10)}`;
+      // For YouTube: derive the canonical video ID from the URL
+      let videoId: string;
+      if (input.platform === "YouTube") {
+        const rawId = extractYouTubeVideoId(input.videoUrl);
+        videoId = rawId ? `yt_${rawId}` : `manual_${nanoid(10)}`;
+      } else {
+        videoId = `manual_${nanoid(10)}`;
+      }
       await insertVideo({
         videoId,
         influencerName: input.influencerName,
@@ -144,6 +163,7 @@ const videosRouter = router({
         publishedDate: input.publishedDate,
         dateAdded: todayStr(),
         thumbnailUrl: input.thumbnailUrl,
+        durationSeconds: input.durationSeconds,
       });
       return { success: true, videoId };
     }),

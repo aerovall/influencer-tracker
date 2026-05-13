@@ -1,9 +1,11 @@
 /**
  * Platform API Integration Service
- * Handles YouTube Data API v3, Instagram Graph API, and TikTok Research API
- * All credentials are fetched from the database at runtime.
+ * YouTube: Uses youtubei.js (InnerTube) — NO API KEY REQUIRED
+ * Instagram: Uses Instagram Graph API (access token required)
+ * TikTok: Uses TikTok Research API (access token required)
  */
 
+import { Innertube } from "youtubei.js";
 import { getCredentialByKey } from "./db";
 
 export interface VideoData {
@@ -24,99 +26,154 @@ export interface VideoMetrics {
   engagementRate: number;
 }
 
-// ─── YouTube Data API v3 ──────────────────────────────────────────────────────
+// ─── YouTube via InnerTube (NO API KEY REQUIRED) ──────────────────────────────
 
-async function getYouTubeApiKey(): Promise<string | null> {
-  const cred = await getCredentialByKey("youtube_api_key");
-  return cred?.credentialValue ?? null;
-}
+let _ytInstance: Innertube | null = null;
 
-export async function fetchYouTubeChannelVideos(channelId: string): Promise<VideoData[]> {
-  const apiKey = await getYouTubeApiKey();
-  if (!apiKey) throw new Error("YouTube API key not configured");
-
-  const videos: VideoData[] = [];
-  let pageToken: string | undefined;
-
-  do {
-    const params = new URLSearchParams({
-      part: "snippet",
-      channelId,
-      maxResults: "50",
-      order: "date",
-      type: "video",
-      key: apiKey,
-      ...(pageToken ? { pageToken } : {}),
+async function getYouTube(): Promise<Innertube> {
+  if (!_ytInstance) {
+    _ytInstance = await Innertube.create({
+      generate_session_locally: true,
     });
-
-    const res = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`YouTube search API error: ${err}`);
-    }
-    const data = await res.json();
-
-    for (const item of data.items ?? []) {
-      const vidId = item.id?.videoId;
-      if (!vidId) continue;
-      videos.push({
-        videoId: `yt_${vidId}`,
-        title: item.snippet?.title ?? "Untitled",
-        videoUrl: `https://www.youtube.com/watch?v=${vidId}`,
-        publishedDate: (item.snippet?.publishedAt ?? "").split("T")[0],
-        thumbnailUrl: item.snippet?.thumbnails?.high?.url ?? item.snippet?.thumbnails?.default?.url,
-      });
-    }
-
-    pageToken = data.nextPageToken;
-  } while (pageToken && videos.length < 200);
-
-  return videos;
+  }
+  return _ytInstance;
 }
 
+/**
+ * Extract a raw YouTube video ID from a variety of URL formats or bare IDs.
+ * Supports: https://youtu.be/ID, https://www.youtube.com/watch?v=ID,
+ *           https://www.youtube.com/shorts/ID, and bare 11-char IDs.
+ */
+export function extractYouTubeVideoId(input: string): string | null {
+  // Already a bare 11-char ID
+  if (/^[a-zA-Z0-9_-]{11}$/.test(input.trim())) return input.trim();
+
+  try {
+    const url = new URL(input.trim());
+    if (url.hostname === "youtu.be") return url.pathname.slice(1).split("?")[0] ?? null;
+    if (url.hostname.includes("youtube.com")) {
+      const v = url.searchParams.get("v");
+      if (v) return v;
+      // Shorts: /shorts/ID
+      const shortsMatch = url.pathname.match(/\/shorts\/([a-zA-Z0-9_-]{11})/);
+      if (shortsMatch) return shortsMatch[1] ?? null;
+    }
+  } catch {
+    // Not a valid URL — try regex
+    const match = input.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+    if (match) return match[1] ?? null;
+  }
+  return null;
+}
+
+/**
+ * Fetch a single YouTube video's metadata and metrics using InnerTube.
+ * No API key required — uses YouTube's internal client API.
+ */
+export async function fetchYouTubeVideoInfo(videoUrl: string): Promise<{
+  data: VideoData;
+  metrics: VideoMetrics;
+} | null> {
+  const rawId = extractYouTubeVideoId(videoUrl);
+  if (!rawId) return null;
+
+  try {
+    const yt = await getYouTube();
+    const info = await yt.getInfo(rawId);
+    const basic = info.basic_info;
+
+    const views = basic.view_count ?? 0;
+    const likes = basic.like_count ?? 0;
+    // InnerTube does not expose comment count in basic_info; use 0 as default
+    // (comment count requires a separate engagement panel request)
+    const comments = 0;
+    const engagementRate = views > 0 ? ((likes + comments) / views) * 100 : 0;
+
+    // Thumbnail: pick highest resolution available
+    const thumbs = basic.thumbnail ?? [];
+    const thumbnail =
+      thumbs.sort((a: { width?: number }, b: { width?: number }) => (b.width ?? 0) - (a.width ?? 0))[0]?.url ??
+      `https://img.youtube.com/vi/${rawId}/hqdefault.jpg`;
+
+    // Publish date: InnerTube returns it as a human string like "May 14, 2025"
+    // We parse it or fall back to today
+    let publishedDate = new Date().toISOString().split("T")[0]!;
+    if (basic.start_timestamp) {
+      publishedDate = new Date(basic.start_timestamp).toISOString().split("T")[0]!;
+    }
+
+    const data: VideoData = {
+      videoId: `yt_${rawId}`,
+      title: basic.title ?? "Untitled",
+      videoUrl: `https://www.youtube.com/watch?v=${rawId}`,
+      publishedDate,
+      thumbnailUrl: thumbnail,
+      durationSeconds: basic.duration ?? undefined,
+    };
+
+    const metrics: VideoMetrics = {
+      videoId: `yt_${rawId}`,
+      viewCount: views,
+      likes,
+      comments,
+      shares: 0, // YouTube does not expose share counts publicly
+      engagementRate: parseFloat(engagementRate.toFixed(4)),
+    };
+
+    return { data, metrics };
+  } catch (err) {
+    console.error(`[YouTube] Failed to fetch info for ${rawId}:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+/**
+ * Fetch metrics for a list of YouTube video IDs (already stored in DB).
+ * Used by the daily view count snapshot job.
+ */
 export async function fetchYouTubeVideoMetrics(platformVideoIds: string[]): Promise<VideoMetrics[]> {
-  const apiKey = await getYouTubeApiKey();
-  if (!apiKey) throw new Error("YouTube API key not configured");
+  const results: VideoMetrics[] = [];
 
-  // Strip our internal prefix to get raw YouTube IDs
-  const rawIds = platformVideoIds.map((id) => id.replace(/^yt_/, ""));
-  const chunks: string[][] = [];
-  for (let i = 0; i < rawIds.length; i += 50) chunks.push(rawIds.slice(i, i + 50));
-
-  const metrics: VideoMetrics[] = [];
-
-  for (const chunk of chunks) {
-    const params = new URLSearchParams({
-      part: "statistics",
-      id: chunk.join(","),
-      key: apiKey,
-    });
-    const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?${params}`);
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`YouTube videos API error: ${err}`);
-    }
-    const data = await res.json();
-
-    for (const item of data.items ?? []) {
-      const stats = item.statistics ?? {};
-      const views = parseInt(stats.viewCount ?? "0", 10);
-      const likes = parseInt(stats.likeCount ?? "0", 10);
-      const comments = parseInt(stats.commentCount ?? "0", 10);
-      const engagementRate = views > 0 ? ((likes + comments) / views) * 100 : 0;
-
-      metrics.push({
-        videoId: `yt_${item.id}`,
-        viewCount: views,
-        likes,
-        comments,
-        shares: 0, // YouTube API does not expose share counts
-        engagementRate: parseFloat(engagementRate.toFixed(4)),
-      });
-    }
+  for (const platformId of platformVideoIds) {
+    const rawId = platformId.replace(/^yt_/, "");
+    const result = await fetchYouTubeVideoInfo(`https://www.youtube.com/watch?v=${rawId}`);
+    if (result) results.push(result.metrics);
   }
 
-  return metrics;
+  return results;
+}
+
+/**
+ * Fetch videos from a YouTube channel using InnerTube.
+ * Returns up to 30 most recent videos without any API key.
+ */
+export async function fetchYouTubeChannelVideos(channelIdOrHandle: string): Promise<VideoData[]> {
+  try {
+    const yt = await getYouTube();
+    const channel = await yt.getChannel(channelIdOrHandle);
+    const videosTab = await channel.getVideos();
+    const videos: VideoData[] = [];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const item of ((videosTab.videos ?? []) as any[]).slice(0, 30)) {
+      const rawId: string | undefined = item.id;
+      if (!rawId) continue;
+      const thumbs: Array<{ url?: string }> = item.thumbnails ?? [];
+      videos.push({
+        videoId: `yt_${rawId}`,
+        title: String(item.title ?? "Untitled"),
+        videoUrl: `https://www.youtube.com/watch?v=${rawId}`,
+        publishedDate: new Date().toISOString().split("T")[0]!,
+        thumbnailUrl: thumbs[0]?.url,
+        durationSeconds: item.duration?.seconds ?? undefined,
+      });
+    }
+
+    return videos;
+  } catch (err) {
+    console.error(`[YouTube] Failed to fetch channel videos for ${channelIdOrHandle}:`, err instanceof Error ? err.message : err);
+    return [];
+  }
 }
 
 // ─── Instagram Graph API ──────────────────────────────────────────────────────

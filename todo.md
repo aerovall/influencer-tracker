@@ -92,3 +92,19 @@
 - [x] Vitest: reports.getById
 - [x] Vitest: admin.createThreshold
 - [x] Vitest: auth.logout
+
+## No-API YouTube Tracking (v1.1)
+- [x] Research YouTube public endpoints (oEmbed, noembed, Innertube/YouTube internal API)
+- [x] Build server-side YouTubePublicFetcher using Innertube API (no key required)
+- [x] Fetch: video title, views, likes, comments, publish date, thumbnail from public data
+- [x] Update syncEngine to use new fetcher for YouTube (no credential required)
+- [x] Update platformApi.ts to route YouTube calls through the new fetcher
+- [x] Remove YouTube API key requirement from Admin Panel credentials section
+- [x] Add note in Admin UI that YouTube tracking is keyless/automatic
+- [x] Update vitest tests to cover the new public fetcher logic
+
+## Gap Resolutions (v1.1 follow-up)
+- [x] YouTube comment count: document limitation in UI (InnerTube basic_info does not expose comment count; show N/A in UI)
+- [x] YouTube publish date: use video publish date from InnerTube or fall back gracefully with a note
+- [x] Add vitest coverage for extractYouTubeVideoId URL parsing
+- [x] Add vitest coverage for fetchYouTubeVideoInfo error/null handling

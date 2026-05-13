@@ -7,8 +7,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfluencerBadge, PlatformBadge, formatNumber } from "@/components/Badges";
-import { ExternalLink, Plus, Trash2, Eye, ThumbsUp, MessageSquare } from "lucide-react";
-import { useState } from "react";
+import { ExternalLink, Plus, Trash2, Eye, ThumbsUp, MessageSquare, Loader2, CheckCircle2 } from "lucide-react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
 
 const INFLUENCERS = ["Levi", "NoBs", "Danielle"] as const;
@@ -23,19 +23,57 @@ function AddVideoDialog({ onSuccess }: { onSuccess: () => void }) {
     title: "",
     publishedDate: new Date().toISOString().split("T")[0],
     thumbnailUrl: "",
+    durationSeconds: undefined as number | undefined,
   });
+  const [ytFetching, setYtFetching] = useState(false);
+  const [ytFetched, setYtFetched] = useState(false);
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const utils = trpc.useUtils();
 
   const create = trpc.videos.create.useMutation({
     onSuccess: () => {
       toast.success("Video added successfully");
       setOpen(false);
+      setYtFetched(false);
       onSuccess();
     },
     onError: (e) => toast.error(e.message),
   });
 
+  // Auto-fetch YouTube metadata when a YouTube URL is pasted
+  const handleUrlChange = (url: string) => {
+    setForm((f) => ({ ...f, videoUrl: url }));
+    setYtFetched(false);
+    if (form.platform !== "YouTube") return;
+    if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+    // Debounce 600ms to avoid firing on every keystroke
+    fetchTimeoutRef.current = setTimeout(async () => {
+      const ytPattern = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/))[a-zA-Z0-9_-]{11}/;
+      if (!ytPattern.test(url)) return;
+      setYtFetching(true);
+      try {
+        const result = await utils.videos.fetchYouTubeInfo.fetch({ url });
+        if (result) {
+          setForm((f) => ({
+            ...f,
+            title: result.data.title || f.title,
+            publishedDate: result.data.publishedDate || f.publishedDate,
+            thumbnailUrl: result.data.thumbnailUrl || f.thumbnailUrl,
+            durationSeconds: result.data.durationSeconds,
+          }));
+          setYtFetched(true);
+          toast.success("YouTube metadata fetched automatically");
+        }
+      } catch {
+        // Silently fail — user can fill in manually
+      } finally {
+        setYtFetching(false);
+      }
+    }, 600);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setYtFetched(false); }}>
       <DialogTrigger asChild>
         <Button size="sm" className="gap-2">
           <Plus className="h-4 w-4" /> Add Video
@@ -43,7 +81,7 @@ function AddVideoDialog({ onSuccess }: { onSuccess: () => void }) {
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Add Video Manually</DialogTitle>
+          <DialogTitle>Add Video</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
           <div className="grid grid-cols-2 gap-4">
@@ -58,7 +96,7 @@ function AddVideoDialog({ onSuccess }: { onSuccess: () => void }) {
             </div>
             <div className="space-y-2">
               <Label>Platform</Label>
-              <Select value={form.platform} onValueChange={(v) => setForm((f) => ({ ...f, platform: v as typeof PLATFORMS[number] }))}>
+              <Select value={form.platform} onValueChange={(v) => { setForm((f) => ({ ...f, platform: v as typeof PLATFORMS[number] })); setYtFetched(false); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {PLATFORMS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
@@ -66,12 +104,27 @@ function AddVideoDialog({ onSuccess }: { onSuccess: () => void }) {
               </Select>
             </div>
           </div>
+
           <div className="space-y-2">
-            <Label>Video URL</Label>
-            <Input placeholder="https://..." value={form.videoUrl} onChange={(e) => setForm((f) => ({ ...f, videoUrl: e.target.value }))} />
+            <div className="flex items-center justify-between">
+              <Label>Video URL</Label>
+              {form.platform === "YouTube" && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  {ytFetching && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {ytFetched && <CheckCircle2 className="h-3 w-3 text-green-500" />}
+                  {ytFetching ? "Fetching metadata..." : ytFetched ? "Auto-filled from YouTube" : "Paste URL to auto-fill"}
+                </span>
+              )}
+            </div>
+            <Input
+              placeholder={form.platform === "YouTube" ? "https://youtube.com/watch?v=... or youtu.be/..." : "https://..."}
+              value={form.videoUrl}
+              onChange={(e) => handleUrlChange(e.target.value)}
+            />
           </div>
+
           <div className="space-y-2">
-            <Label>Title</Label>
+            <Label>Title {form.platform === "YouTube" && <span className="text-xs text-muted-foreground">(auto-filled for YouTube)</span>}</Label>
             <Input placeholder="Video title" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
           </div>
           <div className="space-y-2">
@@ -79,12 +132,12 @@ function AddVideoDialog({ onSuccess }: { onSuccess: () => void }) {
             <Input type="date" value={form.publishedDate} onChange={(e) => setForm((f) => ({ ...f, publishedDate: e.target.value }))} />
           </div>
           <div className="space-y-2">
-            <Label>Thumbnail URL (optional)</Label>
+            <Label>Thumbnail URL <span className="text-xs text-muted-foreground">(auto-filled for YouTube)</span></Label>
             <Input placeholder="https://..." value={form.thumbnailUrl} onChange={(e) => setForm((f) => ({ ...f, thumbnailUrl: e.target.value }))} />
           </div>
           <Button
             className="w-full"
-            disabled={create.isPending || !form.videoUrl || !form.title}
+            disabled={create.isPending || ytFetching || !form.videoUrl || !form.title}
             onClick={() => create.mutate(form)}
           >
             {create.isPending ? "Adding..." : "Add Video"}

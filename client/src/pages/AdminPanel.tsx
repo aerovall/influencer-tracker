@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfluencerBadge, PlatformBadge } from "@/components/Badges";
-import { Plus, Trash2, RefreshCw, Key, Bell, Users, Activity, Download } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Key, Bell, Users, Activity, Download, CheckCircle2, Youtube } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -64,7 +64,6 @@ function CredentialsSection() {
                 <Select value={form.credentialKey} onValueChange={(v) => setForm((f) => ({ ...f, credentialKey: v }))}>
                   <SelectTrigger><SelectValue placeholder="Select key type..." /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="youtube_api_key">youtube_api_key</SelectItem>
                     <SelectItem value="instagram_access_token">instagram_access_token</SelectItem>
                     <SelectItem value="tiktok_access_token">tiktok_access_token</SelectItem>
                   </SelectContent>
@@ -82,8 +81,15 @@ function CredentialsSection() {
         </Dialog>
       </div>
 
+      {/* YouTube keyless notice */}
+      <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3 text-xs text-green-400 flex items-start gap-2">
+        <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+        <div>
+          <strong>YouTube tracking requires no API key.</strong> Views, likes, and comments are fetched automatically via YouTube's internal InnerTube API — just paste a video URL and the system handles the rest.
+        </div>
+      </div>
       <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-400">
-        <strong>Note:</strong> YouTube Data API v3, Instagram Graph API, and TikTok Research API credentials are required for automated daily syncs. Credentials are stored encrypted in the database.
+        <strong>Instagram &amp; TikTok credentials required</strong> for automated daily syncs on those platforms. Credentials are stored encrypted in the database.
       </div>
 
       {isLoading ? <Skeleton className="h-24 w-full" /> : (creds?.length ?? 0) === 0 ? (

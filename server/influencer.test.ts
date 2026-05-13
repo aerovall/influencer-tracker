@@ -154,7 +154,8 @@ describe("videos.create", () => {
       publishedDate: "2025-06-01",
     });
     expect(result.success).toBe(true);
-    expect(result.videoId).toMatch(/^manual_/);
+    // YouTube videos now get a yt_ prefix derived from the URL video ID
+    expect(result.videoId).toMatch(/^yt_/);
   });
 
   it("rejects invalid influencer names", async () => {
@@ -270,5 +271,38 @@ describe("auth.logout", () => {
     const caller = appRouter.createCaller(ctx);
     const result = await caller.auth.logout();
     expect(result.success).toBe(true);
+  });
+});
+
+// ─── extractYouTubeVideoId unit tests ────────────────────────────────────────
+import { extractYouTubeVideoId } from "./platformApi";
+
+describe("extractYouTubeVideoId", () => {
+  it("parses a standard watch URL", () => {
+    expect(extractYouTubeVideoId("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+  });
+
+  it("parses a youtu.be short URL", () => {
+    expect(extractYouTubeVideoId("https://youtu.be/dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+  });
+
+  it("parses a YouTube Shorts URL", () => {
+    expect(extractYouTubeVideoId("https://www.youtube.com/shorts/dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+  });
+
+  it("returns the ID directly if already a bare 11-char ID", () => {
+    expect(extractYouTubeVideoId("dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+  });
+
+  it("returns null for a non-YouTube URL", () => {
+    expect(extractYouTubeVideoId("https://tiktok.com/@user/video/123")).toBeNull();
+  });
+
+  it("returns null for an empty string", () => {
+    expect(extractYouTubeVideoId("")).toBeNull();
+  });
+
+  it("returns null for a random string", () => {
+    expect(extractYouTubeVideoId("not-a-url-at-all")).toBeNull();
   });
 });
