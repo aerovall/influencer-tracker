@@ -27,8 +27,9 @@ import {
   updatePlatformAccountSyncTime,
   updateReportSchedule,
   updateSyncLog,
+  updateVideoMeta,
 } from "./db";
-import { fetchBulkVideoStats, fetchChannelUploads } from "./channelEngine";
+import { fetchChannelUploads, fetchChannelVideoStats } from "./channelEngine";
 import { notifyOwner } from "./_core/notification";
 import {
   fetchInstagramUserMedia,
@@ -404,12 +405,14 @@ export async function runChannelSync(): Promise<{ newVideos: number; updatedStat
 
   for (const channel of channels) {
     try {
-      const uploads = await fetchChannelUploads(channel.channelId, 10);
-      const rawIds = uploads.map((u) => u.videoId);
-      const statsMap = await fetchBulkVideoStats(rawIds);
+      // Fetch uploads AND stats in a single channel listing call.
+      // fetchChannelVideoStats returns a map rawId → stats from the Videos tab.
+      // fetchChannelUploads uses the same listing so we combine both in one pass.
+      const uploads = await fetchChannelUploads(channel.channelId, 30);
+      // Build a stats map directly from the upload objects (they already carry stats)
+      const statsMap = new Map(uploads.map((u) => [u.videoId, u]));
 
       for (const upload of uploads) {
-        const stats = statsMap.get(upload.videoId);
         const existing = await getVideoByVideoId(upload.ytVideoId);
 
         if (!existing) {
@@ -420,27 +423,34 @@ export async function runChannelSync(): Promise<{ newVideos: number; updatedStat
             platform: "YouTube",
             channelId: channel.channelId,
             videoUrl: upload.videoUrl,
-            title: stats?.title ?? upload.title,
-            publishedDate: stats?.publishedDate ?? upload.publishedDate,
+            title: upload.title,
+            publishedDate: upload.publishedDate,
             dateAdded: todayStr(),
-            thumbnailUrl: stats?.thumbnailUrl ?? upload.thumbnailUrl,
-            durationSeconds: stats?.durationSeconds ?? upload.durationSeconds,
+            thumbnailUrl: upload.thumbnailUrl,
+            durationSeconds: upload.durationSeconds,
             isActive: true,
             isSeen: false,  // triggers the Channels nav badge
           });
           newVideos++;
+        } else if (upload.title && upload.title !== "Untitled" && existing.title === "Untitled") {
+          // Back-fill title/duration for previously inserted videos that had no stats
+          await updateVideoMeta(upload.ytVideoId, {
+            title: upload.title,
+            durationSeconds: upload.durationSeconds,
+            thumbnailUrl: upload.thumbnailUrl,
+          });
         }
 
         // Snapshot today's stats (skip if already done today)
-        if (stats) {
+        if (upload.viewCount > 0 || upload.durationSeconds > 0) {
           const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
           try {
             await insertViewCount({
               countId,
               videoId: upload.ytVideoId,
               date: todayStr(),
-              viewCount: stats.viewCount,
-              likes: stats.likeCount,
+              viewCount: upload.viewCount,
+              likes: upload.likeCount,
               comments: 0,
               shares: 0,
               engagementRate: "0",

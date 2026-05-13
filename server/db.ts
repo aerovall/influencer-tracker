@@ -174,6 +174,21 @@ export async function updateVideo(videoId: string, data: Partial<InsertVideo>) {
   await db.update(videos).set(data).where(eq(videos.videoId, videoId));
 }
 
+/** Back-fill title, durationSeconds, and thumbnailUrl for a video that was inserted without stats. */
+export async function updateVideoMeta(
+  videoId: string,
+  data: { title?: string; durationSeconds?: number; thumbnailUrl?: string | null }
+) {
+  const db = await getDb();
+  if (!db) return;
+  const set: Record<string, unknown> = {};
+  if (data.title) set.title = data.title;
+  if (data.durationSeconds !== undefined) set.durationSeconds = data.durationSeconds;
+  if (data.thumbnailUrl !== undefined) set.thumbnailUrl = data.thumbnailUrl;
+  if (Object.keys(set).length === 0) return;
+  await db.update(videos).set(set).where(eq(videos.videoId, videoId));
+}
+
 export async function deleteVideo(videoId: string) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
@@ -229,17 +244,21 @@ export async function getLatestViewCountByVideoId(videoId: string) {
 export async function insertViewCount(data: InsertViewCount) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");
-  // Only insert if no row exists for this video+date (never overwrite)
-  const existing = await db
-    .select({ id: viewCounts.id })
-    .from(viewCounts)
-    .where(and(eq(viewCounts.videoId, data.videoId), eq(viewCounts.date, data.date)))
-    .limit(1);
-  if (existing.length === 0) {
-    await db.insert(viewCounts).values(data);
-    return true;
-  }
-  return false; // already exists for today
+  // Upsert: insert new row, or update stats if a row already exists for this video+date.
+  // This ensures re-syncing the same day always reflects the latest numbers.
+  await db
+    .insert(viewCounts)
+    .values(data)
+    .onDuplicateKeyUpdate({
+      set: {
+        viewCount: data.viewCount,
+        likes: data.likes,
+        comments: data.comments,
+        shares: data.shares,
+        engagementRate: data.engagementRate,
+      },
+    });
+  return true;
 }
 
 export async function getViewCountTrends(days: number = 30) {

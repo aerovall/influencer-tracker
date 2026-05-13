@@ -1,0 +1,72 @@
+{
+  "query": "SELECT video_id, title, durationSeconds FROM videos WHERE channel_id IS NOT NULL LIMIT 10;\nSELECT video_id, view_count, likes, date FROM view_counts ORDER BY date DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute SELECT video_id, title, durationSeconds FROM videos WHERE channel_id IS NOT NULL LIMIT 10;\nSELECT video_id, view_count, likes, date FROM view_counts ORDER BY date DESC LIMIT 10;",
+  "rows": [
+    {
+      "video_id": "yt_4PlTzx1SwgA",
+      "title": "OMFG!!! They're About To IMPLEMENT XRP!!!! The Moment Is Here!!!",
+      "durationSeconds": "557"
+    },
+    {
+      "video_id": "yt_eO2eRMtE9fk",
+      "title": "XRP BITCOIN 🚨WATCH BEFORE THURSDAY!!!!",
+      "durationSeconds": "585"
+    },
+    {
+      "video_id": "yt_3cmavoxUhoE",
+      "title": "THE FED JUST RELEASED AN XRP BOMBSHELL!!!! PLEASE PREPARE NOW!!!",
+      "durationSeconds": "585"
+    },
+    {
+      "video_id": "yt_60EqT9f-r2w",
+      "title": "How To Trade Crypto Starting With $100 (Full Tutorial)",
+      "durationSeconds": "571"
+    },
+    {
+      "video_id": "yt_DZZLDDywIMI",
+      "title": "XRP BITCOIN 🚨URGENT BLACKROCK CLARITY ACT BOMBSHELL!!!!",
+      "durationSeconds": "511"
+    },
+    {
+      "video_id": "yt_TN2jJeOP_5Y",
+      "title": "XRP Holders Are About To Get A HUGE Shock! NO ONE SEES THIS COMING!",
+      "durationSeconds": "491"
+    },
+    {
+      "video_id": "yt_y6_xnc35V6A",
+      "title": "XRP, YOU WON'T BELIEVE THIS!!!",
+      "durationSeconds": "586"
+    },
+    {
+      "video_id": "yt_xKpRrByKkO4",
+      "title": "BREAKING XRP NEWS!!! WE'VE DONE IT!!! CLARITY ACT IS DONE!!!!",
+      "durationSeconds": "682"
+    },
+    {
+      "video_id": "yt_LXY_oYwQdiA",
+      "title": "XRP! How Is NO ONE Seeing This???",
+      "durationSeconds": "591"
+    },
+    {
+      "video_id": "yt_6Q09Z0884TM",
+      "title": "NOBODY IS GOING TO BUY XRP NOW!!!!",
+      "durationSeconds": "665"
+    }
+  ],
+  "messages": [
+    "video_id\tview_count\tlikes\tdate",
+    "yt_eO2eRMtE9fk\t5374\t0\t2026-05-13",
+    "yt_3cmavoxUhoE\t13517\t0\t2026-05-13",
+    "yt_60EqT9f-r2w\t2411\t0\t2026-05-13",
+    "yt_DZZLDDywIMI\t11494\t0\t2026-05-13",
+    "yt_TN2jJeOP_5Y\t24339\t0\t2026-05-13",
+    "yt_y6_xnc35V6A\t11847\t0\t2026-05-13",
+    "yt_xKpRrByKkO4\t20231\t0\t2026-05-13",
+    "yt_LXY_oYwQdiA\t14567\t0\t2026-05-13",
+    "yt_6Q09Z0884TM\t16855\t0\t2026-05-13",
+    "yt_4PlTzx1SwgA\t2236\t0\t2026-05-13"
+  ],
+  "stdout": "video_id\ttitle\tdurationSeconds\nyt_4PlTzx1SwgA\tOMFG!!! They're About To IMPLEMENT XRP!!!! The Moment Is Here!!!\t557\nyt_eO2eRMtE9fk\tXRP BITCOIN 🚨WATCH BEFORE THURSDAY!!!!\t585\nyt_3cmavoxUhoE\tTHE FED JUST RELEASED AN XRP BOMBSHELL!!!! PLEASE PREPARE NOW!!!\t585\nyt_60EqT9f-r2w\tHow To Trade Crypto Starting With $100 (Full Tutorial)\t571\nyt_DZZLDDywIMI\tXRP BITCOIN 🚨URGENT BLACKROCK CLARITY ACT BOMBSHELL!!!!\t511\nyt_TN2jJeOP_5Y\tXRP Holders Are About To Get A HUGE Shock! NO ONE SEES THIS COMING!\t491\nyt_y6_xnc35V6A\tXRP, YOU WON'T BELIEVE THIS!!!\t586\nyt_xKpRrByKkO4\tBREAKING XRP NEWS!!! WE'VE DONE IT!!! CLARITY ACT IS DONE!!!!\t682\nyt_LXY_oYwQdiA\tXRP! How Is NO ONE Seeing This???\t591\nyt_6Q09Z0884TM\tNOBODY IS GOING TO BUY XRP NOW!!!!\t665\nvideo_id\tview_count\tlikes\tdate\nyt_eO2eRMtE9fk\t5374\t0\t2026-05-13\nyt_3cmavoxUhoE\t13517\t0\t2026-05-13\nyt_60EqT9f-r2w\t2411\t0\t2026-05-13\nyt_DZZLDDywIMI\t11494\t0\t2026-05-13\nyt_TN2jJeOP_5Y\t24339\t0\t2026-05-13\nyt_y6_xnc35V6A\t11847\t0\t2026-05-13\nyt_xKpRrByKkO4\t20231\t0\t2026-05-13\nyt_LXY_oYwQdiA\t14567\t0\t2026-05-13\nyt_6Q09Z0884TM\t16855\t0\t2026-05-13\nyt_4PlTzx1SwgA\t2236\t0\t2026-05-13\n",
+  "stderr": "",
+  "execution_time_ms": 2023
+}

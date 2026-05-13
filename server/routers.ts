@@ -42,6 +42,7 @@ import {
   insertAlertThreshold,
   insertShill,
   insertVideo,
+  insertViewCount,
   markAlertRead,
   updateAlertThreshold,
   updateChannelLastChecked,
@@ -69,11 +70,11 @@ import {
 } from "./syncEngine";
 import { extractYouTubeVideoId, fetchYouTubeVideoInfo } from "./platformApi";
 import {
-  fetchBulkVideoStats,
   fetchChannelUploads,
   resolveChannel,
   toDbVideoId,
 } from "./channelEngine";
+import { updateVideoMeta } from "./db";
 
 function todayStr() {
   return new Date().toISOString().split("T")[0]!;
@@ -519,51 +520,40 @@ const channelsRouter = router({
         isActive: true,
       });
 
-      // 3. Fetch last 10 uploads
+      // 3. Fetch last 10 uploads — stats come directly from the channel listing
       const uploads = await fetchChannelUploads(channelInfo.channelId, 10);
 
-      // 4. Fetch detailed stats for each video
-      const rawIds = uploads.map((u) => u.videoId);
-      const statsMap = await fetchBulkVideoStats(rawIds);
-
-      // 5. Persist each video (skip if already exists)
+      // 4. Persist each video (skip if already exists)
       let newVideos = 0;
       for (const upload of uploads) {
         const existing = await getVideoByVideoId(upload.ytVideoId);
         if (existing) continue;
-        const stats = statsMap.get(upload.videoId);
         await insertVideo({
           videoId: upload.ytVideoId,
           influencerName: input.influencerName ?? "Unknown",
           platform: "YouTube",
           channelId: channelInfo.channelId,
           videoUrl: upload.videoUrl,
-          title: stats?.title ?? upload.title,
-          publishedDate: stats?.publishedDate ?? upload.publishedDate,
+          title: upload.title,
+          publishedDate: upload.publishedDate,
           dateAdded: todayStr(),
-          thumbnailUrl: stats?.thumbnailUrl ?? upload.thumbnailUrl,
-          durationSeconds: stats?.durationSeconds ?? upload.durationSeconds,
+          thumbnailUrl: upload.thumbnailUrl,
+          durationSeconds: upload.durationSeconds,
           isActive: true,
           isSeen: false,  // triggers the Channels nav badge
         });
         // Snapshot initial view count
         const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
-        const existing_vc = null; // first time, always insert
-        try {
-          const { insertViewCount } = await import("./db");
-          await insertViewCount({
-            countId,
-            videoId: upload.ytVideoId,
-            date: todayStr(),
-            viewCount: stats?.viewCount ?? upload.viewCount,
-            likes: stats?.likeCount ?? 0,
-            comments: 0,
-            shares: 0,
-            engagementRate: "0",
-          });
-        } catch {
-          // duplicate key = already snapshotted today, skip
-        }
+        await insertViewCount({
+          countId,
+          videoId: upload.ytVideoId,
+          date: todayStr(),
+          viewCount: upload.viewCount,
+          likes: upload.likeCount,
+          comments: 0,
+          shares: 0,
+          engagementRate: "0",
+        });
         newVideos++;
       }
 
@@ -586,17 +576,15 @@ const channelsRouter = router({
       const channel = await getChannelById(input.channelId);
       if (!channel) throw new Error("Channel not found");
 
-      // Fetch latest uploads
-      const uploads = await fetchChannelUploads(input.channelId, 10);
-      const rawIds = uploads.map((u) => u.videoId);
-      const statsMap = await fetchBulkVideoStats(rawIds);
+      // Fetch latest uploads — stats (views, duration, title) come directly from
+      // the channel listing. No per-video API calls needed (avoids bot-detection).
+      const uploads = await fetchChannelUploads(input.channelId, 30);
 
       let newVideos = 0;
       let updatedStats = 0;
 
       for (const upload of uploads) {
         const existing = await getVideoByVideoId(upload.ytVideoId);
-        const stats = statsMap.get(upload.videoId);
 
         if (!existing) {
           // New video discovered
@@ -606,42 +594,42 @@ const channelsRouter = router({
             platform: "YouTube",
             channelId: input.channelId,
             videoUrl: upload.videoUrl,
-            title: stats?.title ?? upload.title,
-            publishedDate: stats?.publishedDate ?? upload.publishedDate,
+            title: upload.title,
+            publishedDate: upload.publishedDate,
             dateAdded: todayStr(),
-            thumbnailUrl: stats?.thumbnailUrl ?? upload.thumbnailUrl,
-            durationSeconds: stats?.durationSeconds ?? upload.durationSeconds,
+            thumbnailUrl: upload.thumbnailUrl,
+            durationSeconds: upload.durationSeconds,
             isActive: true,
             isSeen: false,  // triggers the Channels nav badge
           });
           newVideos++;
+        } else if (upload.title && upload.title !== "Untitled" && existing.title === "Untitled") {
+          // Back-fill title/duration for videos inserted without stats
+          await updateVideoMeta(upload.ytVideoId, {
+            title: upload.title,
+            durationSeconds: upload.durationSeconds,
+            thumbnailUrl: upload.thumbnailUrl,
+          });
         }
 
-        // Always snapshot today's stats
-        if (stats) {
-          const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
-          try {
-            const { insertViewCount } = await import("./db");
-            await insertViewCount({
-              countId,
-              videoId: upload.ytVideoId,
-              date: todayStr(),
-              viewCount: stats.viewCount,
-              likes: stats.likeCount,
-              comments: 0,
-              shares: 0,
-              engagementRate: "0",
-            });
-            updatedStats++;
-          } catch {
-            // duplicate = already snapshotted today
-          }
-        }
+        // Snapshot today's stats (upsert — updates if already exists today)
+        const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
+        await insertViewCount({
+          countId,
+          videoId: upload.ytVideoId,
+          date: todayStr(),
+          viewCount: upload.viewCount,
+          likes: upload.likeCount,
+          comments: 0,
+          shares: 0,
+          engagementRate: "0",
+        });
+        updatedStats++;
       }
 
       await updateChannelLastChecked(input.channelId);
 
-      return { success: true, newVideos, updatedStats };
+      return { success: true, newVideos, updatedStats, channelName: channel.channelName };
     }),
 
   /** List all videos belonging to a specific channel. */

@@ -30,10 +30,16 @@ const PROMO_TYPES = [
 ] as const;
 
 function formatNum(n: number | null | undefined): string {
-  if (!n) return "—";
+  if (n == null || n === undefined) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toLocaleString();
+}
+
+/** Format a stat that may be 0 because it's genuinely unavailable (e.g. likes from channel listing). */
+function formatUnavailableStat(n: number | null | undefined): string {
+  if (n == null || n === 0) return "N/A";
+  return formatNum(n);
 }
 
 function formatDuration(s: number | null | undefined): string {
@@ -189,15 +195,15 @@ function VideoRow({ video }: { video: any }) {
           </div>
         </td>
         <td className="px-4 py-3">
-          <div className="flex items-center gap-1 text-sm">
+          <div className="flex items-center gap-1 text-sm" title="Like counts are not available from YouTube's public channel listing">
             <ThumbsUp className="h-3.5 w-3.5 text-muted-foreground" />
-            <span>{formatNum(latestStats?.likes)}</span>
+            <span className="text-muted-foreground/60">{formatUnavailableStat(latestStats?.likes)}</span>
           </div>
         </td>
         <td className="px-4 py-3">
-          <div className="flex items-center gap-1 text-sm">
+          <div className="flex items-center gap-1 text-sm" title="Comment counts are not available from YouTube's public channel listing">
             <MessageCircle className="h-3.5 w-3.5 text-muted-foreground" />
-            <span>{formatNum(latestStats?.comments)}</span>
+            <span className="text-muted-foreground/60">{formatUnavailableStat(latestStats?.comments)}</span>
           </div>
         </td>
         <td className="px-4 py-3 text-sm text-muted-foreground">

@@ -6,9 +6,14 @@
  *
  * Responsibilities:
  *  1. Resolve a channel URL / handle / ID → canonical channel metadata
- *  2. Fetch the last N uploads from a channel
+ *  2. Fetch the last N uploads from a channel WITH full stats
  *  3. Detect new videos uploaded since a channel was last checked
  *  4. Pull per-video stats (views, likes, duration, title, thumbnail)
+ *
+ * NOTE: yt.getBasicInfo() is blocked by YouTube bot-detection (LOGIN_REQUIRED).
+ * All stats are sourced from the channel's Videos tab listing, which is freely
+ * accessible without authentication. The channel listing provides:
+ *   - title, view_count, duration.seconds, published.text, thumbnails
  */
 
 import { Innertube } from "youtubei.js";
@@ -85,6 +90,11 @@ export function toDbVideoId(rawId: string): string {
   return `yt_${rawId}`;
 }
 
+/** Strip the yt_ prefix to get the raw YouTube video ID. */
+export function toRawVideoId(dbId: string): string {
+  return dbId.startsWith("yt_") ? dbId.slice(3) : dbId;
+}
+
 /** Parse a subscriber count string like "1.2M" → number. */
 function parseSubscriberCount(raw: string | undefined | null): number {
   if (!raw) return 0;
@@ -99,41 +109,39 @@ function toDateStr(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Try to extract a publish date from a video item's metadata. */
-function extractPublishDate(item: any): string {
+/**
+ * Parse a "X time ago" relative text into an approximate YYYY-MM-DD date.
+ * The channel listing provides published.text like "1 hour ago", "2 days ago", etc.
+ */
+function parseRelativeDate(text: string): string {
   try {
-    // published_timetext is usually "X days ago" — not ideal, but we try
-    const ts = item?.published?.seconds
-      ?? item?.start_timestamp
-      ?? item?.metadata?.published_time_text;
-    if (typeof ts === "number" && ts > 0) {
-      return toDateStr(new Date(ts * 1000));
-    }
-    // snippet_text like "2 days ago" → approximate
-    const txt: string = item?.published_timetext ?? item?.metadata?.published_time_text ?? "";
-    if (txt.includes("year")) {
-      const y = parseInt(txt) || 1;
+    const t = text.toLowerCase();
+    if (t.includes("year")) {
+      const y = parseInt(t) || 1;
       const d = new Date();
       d.setFullYear(d.getFullYear() - y);
       return toDateStr(d);
     }
-    if (txt.includes("month")) {
-      const m = parseInt(txt) || 1;
+    if (t.includes("month")) {
+      const m = parseInt(t) || 1;
       const d = new Date();
       d.setMonth(d.getMonth() - m);
       return toDateStr(d);
     }
-    if (txt.includes("week")) {
-      const w = parseInt(txt) || 1;
+    if (t.includes("week")) {
+      const w = parseInt(t) || 1;
       const d = new Date();
       d.setDate(d.getDate() - w * 7);
       return toDateStr(d);
     }
-    if (txt.includes("day")) {
-      const dy = parseInt(txt) || 1;
+    if (t.includes("day")) {
+      const dy = parseInt(t) || 1;
       const d = new Date();
       d.setDate(d.getDate() - dy);
       return toDateStr(d);
+    }
+    if (t.includes("hour") || t.includes("minute") || t.includes("second")) {
+      return toDateStr(new Date()); // today
     }
   } catch {
     // ignore
@@ -141,23 +149,14 @@ function extractPublishDate(item: any): string {
   return toDateStr(new Date());
 }
 
-/** Parse duration in seconds from a duration string like "12:34" or "1:23:45". */
-function parseDuration(raw: string | undefined | null): number {
-  if (!raw) return 0;
-  const parts = raw.split(":").map(Number);
-  if (parts.length === 3) return (parts[0]! * 3600) + (parts[1]! * 60) + (parts[2]! || 0);
-  if (parts.length === 2) return (parts[0]! * 60) + (parts[1]! || 0);
-  return 0;
-}
-
 /** Safe number parse from any value (string with commas, number, etc.). */
 function safeNum(v: any): number {
   if (typeof v === "number") return v;
-  if (typeof v === "string") return parseInt(v.replace(/,/g, ""), 10) || 0;
+  if (typeof v === "string") return parseInt(v.replace(/[^0-9]/g, ""), 10) || 0;
   return 0;
 }
 
-/** Extract best thumbnail URL from a thumbnail object. */
+/** Extract best thumbnail URL from a thumbnail object or array. */
 function bestThumb(thumbnails: any): string | null {
   if (!thumbnails) return null;
   if (Array.isArray(thumbnails)) {
@@ -165,6 +164,54 @@ function bestThumb(thumbnails: any): string | null {
     return sorted[0]?.url ?? null;
   }
   return thumbnails?.url ?? null;
+}
+
+/**
+ * Extract all available stats from a single channel-listing video item.
+ * The channel Videos tab returns rich metadata without requiring authentication.
+ */
+function extractItemStats(item: any): {
+  rawId: string;
+  title: string;
+  viewCount: number;
+  durationSeconds: number;
+  publishedDate: string;
+  thumbnailUrl: string | null;
+} {
+  // Raw video ID — channel listing uses video_id (not id)
+  const rawId: string =
+    item?.video_id ??
+    item?.id ??
+    item?.endpoint?.payload?.videoId ??
+    "";
+
+  // Title
+  const title: string =
+    item?.title?.toString() ??
+    item?.title?.text ??
+    "Untitled";
+
+  // View count — "2,064 views" or "2K views"
+  const viewRaw: string =
+    item?.view_count?.toString() ??
+    item?.short_view_count?.toString() ??
+    "0";
+  const viewCount = safeNum(viewRaw);
+
+  // Duration — item.duration is { text: "9:17", seconds: 557 }
+  const durationSeconds: number =
+    typeof item?.duration?.seconds === "number"
+      ? item.duration.seconds
+      : safeNum(item?.duration?.text ?? "0");
+
+  // Published date — item.published is { text: "1 hour ago" }
+  const publishedText: string = item?.published?.text ?? "";
+  const publishedDate = publishedText ? parseRelativeDate(publishedText) : toDateStr(new Date());
+
+  // Thumbnail
+  const thumbnailUrl = bestThumb(item?.thumbnails ?? item?.thumbnail);
+
+  return { rawId, title, viewCount, durationSeconds, publishedDate, thumbnailUrl };
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -257,7 +304,8 @@ export async function resolveChannel(input: string): Promise<ChannelInfo> {
 
 /**
  * Fetch the last `limit` uploads from a channel (default 10).
- * Returns an array of DiscoveredVideo sorted newest-first.
+ * Returns an array of DiscoveredVideo with full stats from the channel listing.
+ * Stats are sourced directly from the Videos tab — no per-video API calls needed.
  */
 export async function fetchChannelUploads(channelId: string, limit = 10): Promise<DiscoveredVideo[]> {
   const yt = await getYT();
@@ -276,23 +324,10 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
 
   for (const item of items.slice(0, limit)) {
     try {
-      const rawId: string =
-        item?.id ??
-        item?.video_id ??
-        item?.endpoint?.payload?.videoId ??
-        "";
+      const { rawId, title, viewCount, durationSeconds, publishedDate, thumbnailUrl } = extractItemStats(item);
       if (!rawId || rawId.length !== 11) continue;
 
-      const title: string = item?.title?.toString() ?? item?.title?.text ?? "Untitled";
       const videoUrl = `https://www.youtube.com/watch?v=${rawId}`;
-      const publishedDate = extractPublishDate(item);
-      const thumbnailUrl = bestThumb(item?.thumbnail ?? item?.thumbnails);
-      const durationRaw: string = item?.duration?.toString() ?? item?.duration?.text ?? "";
-      const durationSeconds = parseDuration(durationRaw);
-
-      // View count from the item (may be approximate)
-      const vcRaw = item?.view_count?.toString() ?? item?.short_view_count?.toString() ?? "0";
-      const viewCount = safeNum(vcRaw);
 
       results.push({
         videoId: rawId,
@@ -303,7 +338,7 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
         thumbnailUrl,
         durationSeconds,
         viewCount,
-        likeCount: 0, // not available from channel listing; fetched separately
+        likeCount: 0, // not exposed in channel listing
       });
     } catch {
       // skip malformed items
@@ -314,54 +349,68 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
 }
 
 /**
- * Fetch detailed stats for a single YouTube video by its raw video ID.
- * Returns views, likes, duration, title, thumbnail, and publish date.
+ * Fetch current stats for all videos in a channel by re-fetching the channel
+ * Videos tab listing. Returns a map of rawVideoId → VideoStats.
+ *
+ * This replaces the old getBasicInfo() approach which is blocked by YouTube
+ * bot-detection (returns LOGIN_REQUIRED for unauthenticated requests).
  */
-export async function fetchVideoStats(rawVideoId: string): Promise<VideoStats | null> {
+export async function fetchChannelVideoStats(channelId: string, limit = 30): Promise<Map<string, VideoStats>> {
+  const yt = await getYT();
+  const results = new Map<string, VideoStats>();
+
   try {
-    const yt = await getYT();
-    const info = await yt.getBasicInfo(rawVideoId);
-    const basic = (info as any)?.basic_info ?? {};
-
-    const viewCount = safeNum(basic?.view_count ?? 0);
-    const likeCount = safeNum(basic?.like_count ?? 0);
-    const durationSeconds = safeNum(basic?.duration ?? 0);
-    const title: string = basic?.title ?? "Untitled";
-    const thumbnailUrl = bestThumb(basic?.thumbnail);
-
-    // Publish date: try start_timestamp first (unix seconds)
-    let publishedDate = toDateStr(new Date());
-    const ts = basic?.start_timestamp;
-    if (typeof ts === "number" && ts > 0) {
-      publishedDate = toDateStr(new Date(ts * 1000));
+    const channel = await yt.getChannel(channelId);
+    let videosTab: any;
+    try {
+      videosTab = await (channel as any).getVideos();
+    } catch {
+      return results;
     }
 
-    return { videoId: rawVideoId, viewCount, likeCount, durationSeconds, title, thumbnailUrl, publishedDate };
-  } catch (err) {
-    console.error(`[channelEngine] Failed to fetch stats for ${rawVideoId}:`, err);
-    return null;
-  }
-}
+    const items: any[] = videosTab?.videos ?? videosTab?.items ?? [];
 
-/**
- * Given a list of raw video IDs, fetch stats for all of them in parallel
- * (with a concurrency cap to avoid rate limiting).
- */
-export async function fetchBulkVideoStats(rawVideoIds: string[], concurrency = 3): Promise<Map<string, VideoStats>> {
-  const results = new Map<string, VideoStats>();
-  const queue = [...rawVideoIds];
+    for (const item of items.slice(0, limit)) {
+      try {
+        const { rawId, title, viewCount, durationSeconds, publishedDate, thumbnailUrl } = extractItemStats(item);
+        if (!rawId || rawId.length !== 11) continue;
 
-  while (queue.length > 0) {
-    const batch = queue.splice(0, concurrency);
-    const settled = await Promise.allSettled(batch.map((id) => fetchVideoStats(id)));
-    for (const result of settled) {
-      if (result.status === "fulfilled" && result.value) {
-        results.set(result.value.videoId, result.value);
+        results.set(rawId, {
+          videoId: rawId,
+          viewCount,
+          likeCount: 0, // not exposed in channel listing
+          durationSeconds,
+          title,
+          thumbnailUrl,
+          publishedDate,
+        });
+      } catch {
+        // skip malformed items
       }
     }
-    // Small delay between batches to be polite
-    if (queue.length > 0) await new Promise((r) => setTimeout(r, 300));
+  } catch (err) {
+    console.error(`[channelEngine] Failed to fetch channel stats for ${channelId}:`, err);
   }
 
   return results;
+}
+
+/**
+ * @deprecated YouTube's getBasicInfo() is blocked by bot-detection (LOGIN_REQUIRED).
+ * Use fetchChannelVideoStats() instead to get stats from the channel listing.
+ *
+ * Kept for backward compatibility — always returns null.
+ */
+export async function fetchVideoStats(_rawVideoId: string): Promise<VideoStats | null> {
+  console.warn("[channelEngine] fetchVideoStats() is deprecated — use fetchChannelVideoStats() instead");
+  return null;
+}
+
+/**
+ * @deprecated Use fetchChannelVideoStats() instead.
+ * Kept for backward compatibility — returns an empty map.
+ */
+export async function fetchBulkVideoStats(_rawVideoIds: string[], _concurrency = 3): Promise<Map<string, VideoStats>> {
+  console.warn("[channelEngine] fetchBulkVideoStats() is deprecated — use fetchChannelVideoStats() instead");
+  return new Map();
 }

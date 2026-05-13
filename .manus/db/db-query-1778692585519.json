@@ -1,0 +1,90 @@
+{
+  "query": "SELECT video_id, title, durationSeconds, channel_id FROM videos LIMIT 15;\nSELECT COUNT(*) as view_count_rows FROM view_counts;\nDESCRIBE view_counts;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute SELECT video_id, title, durationSeconds, channel_id FROM videos LIMIT 15;\nSELECT COUNT(*) as view_count_rows FROM view_counts;\nDESCRIBE view_counts;",
+  "rows": [
+    {
+      "video_id": "yt_test123",
+      "title": "Test Video NoBs",
+      "durationSeconds": "NULL",
+      "channel_id": "NULL"
+    },
+    {
+      "video_id": "yt_4PlTzx1SwgA",
+      "title": "Untitled",
+      "durationSeconds": "0",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ"
+    },
+    {
+      "video_id": "yt_eO2eRMtE9fk",
+      "title": "Untitled",
+      "durationSeconds": "0",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ"
+    },
+    {
+      "video_id": "yt_3cmavoxUhoE",
+      "title": "Untitled",
+      "durationSeconds": "0",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ"
+    },
+    {
+      "video_id": "yt_60EqT9f-r2w",
+      "title": "Untitled",
+      "durationSeconds": "0",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ"
+    },
+    {
+      "video_id": "yt_DZZLDDywIMI",
+      "title": "Untitled",
+      "durationSeconds": "0",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ"
+    },
+    {
+      "video_id": "yt_TN2jJeOP_5Y",
+      "title": "Untitled",
+      "durationSeconds": "0",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ"
+    },
+    {
+      "video_id": "yt_y6_xnc35V6A",
+      "title": "Untitled",
+      "durationSeconds": "0",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ"
+    },
+    {
+      "video_id": "yt_xKpRrByKkO4",
+      "title": "Untitled",
+      "durationSeconds": "0",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ"
+    },
+    {
+      "video_id": "yt_LXY_oYwQdiA",
+      "title": "Untitled",
+      "durationSeconds": "0",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ"
+    },
+    {
+      "video_id": "yt_6Q09Z0884TM",
+      "title": "Untitled",
+      "durationSeconds": "0",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ"
+    }
+  ],
+  "messages": [
+    "view_count_rows",
+    "10",
+    "Field\tType\tNull\tKey\tDefault\tExtra",
+    "id\tint\tNO\tPRI\tNULL\tauto_increment",
+    "count_id\tvarchar(100)\tNO\tUNI\tNULL\t",
+    "video_id\tvarchar(100)\tNO\t\tNULL\t",
+    "date\tvarchar(10)\tNO\t\tNULL\t",
+    "view_count\tbigint\tNO\t\t0\t",
+    "likes\tbigint\tYES\t\t0\t",
+    "comments\tbigint\tYES\t\t0\t",
+    "shares\tbigint\tYES\t\t0\t",
+    "engagement_rate\tdecimal(8,4)\tYES\t\t0\t",
+    "createdAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\t"
+  ],
+  "stdout": "video_id\ttitle\tdurationSeconds\tchannel_id\nyt_test123\tTest Video NoBs\tNULL\tNULL\nyt_4PlTzx1SwgA\tUntitled\t0\tUC0SesdSOSgLERIZSj_FC8wQ\nyt_eO2eRMtE9fk\tUntitled\t0\tUC0SesdSOSgLERIZSj_FC8wQ\nyt_3cmavoxUhoE\tUntitled\t0\tUC0SesdSOSgLERIZSj_FC8wQ\nyt_60EqT9f-r2w\tUntitled\t0\tUC0SesdSOSgLERIZSj_FC8wQ\nyt_DZZLDDywIMI\tUntitled\t0\tUC0SesdSOSgLERIZSj_FC8wQ\nyt_TN2jJeOP_5Y\tUntitled\t0\tUC0SesdSOSgLERIZSj_FC8wQ\nyt_y6_xnc35V6A\tUntitled\t0\tUC0SesdSOSgLERIZSj_FC8wQ\nyt_xKpRrByKkO4\tUntitled\t0\tUC0SesdSOSgLERIZSj_FC8wQ\nyt_LXY_oYwQdiA\tUntitled\t0\tUC0SesdSOSgLERIZSj_FC8wQ\nyt_6Q09Z0884TM\tUntitled\t0\tUC0SesdSOSgLERIZSj_FC8wQ\nview_count_rows\n10\nField\tType\tNull\tKey\tDefault\tExtra\nid\tint\tNO\tPRI\tNULL\tauto_increment\ncount_id\tvarchar(100)\tNO\tUNI\tNULL\t\nvideo_id\tvarchar(100)\tNO\t\tNULL\t\ndate\tvarchar(10)\tNO\t\tNULL\t\nview_count\tbigint\tNO\t\t0\t\nlikes\tbigint\tYES\t\t0\t\ncomments\tbigint\tYES\t\t0\t\nshares\tbigint\tYES\t\t0\t\nengagement_rate\tdecimal(8,4)\tYES\t\t0\t\ncreatedAt\ttimestamp\tNO\t\tCURRENT_TIMESTAMP\t\n",
+  "stderr": "",
+  "execution_time_ms": 2164
+}

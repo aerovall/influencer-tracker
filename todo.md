@@ -154,3 +154,16 @@
 
 ## v1.5 — Bug Fix: YouTube @handle Channel Resolution
 - [x] Fix resolveChannel() in channelEngine.ts: remove query.replace(/^@/, "") so @handle searches keep the @ prefix and return correct Channel results from youtubei.js search
+
+## v1.6 — Sync Now Result Toast
+- [ ] syncEngine.runChannelSync(): return { newVideoCount } instead of void
+- [ ] tRPC channels.syncChannel: return { newVideoCount, channelName } from mutation
+- [ ] Channels.tsx: show toast after Sync Now — "X new video(s) discovered" or "Already up to date"
+
+## v1.6 — Fix Stats Not Displayed (views, likes, comments, duration all showing "—")
+- [x] Diagnose: check what's in view_counts table and videos table after sync
+- [x] Fix: ensure fetchBulkVideoStats results are stored correctly in view_counts
+- [x] Fix: ensure duration_seconds is stored in videos table on insert
+- [x] Fix: ensure videos table has title populated (not "Untitled")
+- [x] Fix: UI Channels page reads latest view_count row per video and displays it
+- [x] Fix: UI shows duration from videos.duration_seconds column
