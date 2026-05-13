@@ -182,3 +182,12 @@
 - [ ] User: provide TWITTER_BEARER_TOKEN to enable X follower/tweet data (free tier at developer.x.com)
 - [x] UI: show amber warning banners on Instagram/X tabs when API keys are missing
 - [x] UI: show "N/A" with tooltip for likes/comments (YouTube public listing limitation)
+
+## v2.0 — API Keys Settings in Admin Dashboard
+- [ ] Admin page: add "API Keys" tab/section with fields for YOUTUBE_API_KEY, INSTAGRAM_ACCESS_TOKEN, TWITTER_BEARER_TOKEN
+- [ ] Backend: tRPC admin.saveApiKey mutation — store key in api_credentials table (encrypted/hashed display)
+- [ ] Backend: tRPC admin.getApiKeys query — return which keys are configured (masked, not raw values)
+- [ ] Backend: channelEngine/socialEngine read keys from DB (api_credentials table) as fallback to env vars
+- [ ] UI: show connection status badge (Connected / Not configured) per key
+- [ ] UI: "Test Connection" button per key to verify the key works
+- [ ] UI: remove amber warning banners from Instagram/X tabs once key is saved

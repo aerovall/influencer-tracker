@@ -38,7 +38,7 @@ function formatNum(n: number | null | undefined): string {
 
 /** Format a stat that may be 0 because it's genuinely unavailable (e.g. likes from channel listing). */
 function formatUnavailableStat(n: number | null | undefined): string {
-  if (n == null || n === 0) return "N/A";
+  if (n == null || n === 0) return "—";
   return formatNum(n);
 }
 
@@ -378,8 +378,8 @@ function ChannelCard({ channel }: { channel: any }) {
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Video</th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Published</th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Views</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Likes</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Comments</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider" title="YouTube hides like counts from public API since Nov 2021">Likes <span className="text-muted-foreground/40 normal-case font-normal">(hidden)</span></th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider" title="YouTube hides comment counts from public API">Comments <span className="text-muted-foreground/40 normal-case font-normal">(hidden)</span></th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Shills</th>
                   </tr>

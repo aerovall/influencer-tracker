@@ -60,6 +60,7 @@ import {
   getAllSocialAccounts,
   getSocialAccountById,
   deleteSocialAccount,
+  getCredentialByKey,
 } from "./db";
 import {
   generateDailyReport,
@@ -373,6 +374,71 @@ const adminRouter = router({
       const { frequency, ...data } = input;
       await updateReportSchedule(frequency, data);
       return { success: true };
+    }),
+
+  // API Key Status (for the new API Keys tab)
+  getApiKeyStatus: protectedProcedure.query(async () => {
+    const ytKey = ENV.youtubeApiKey || (await getCredentialByKey("youtube_api_key"))?.credentialValue;
+    const igToken = ENV.instagramAccessToken || (await getCredentialByKey("instagram_access_token"))?.credentialValue;
+    const twToken = ENV.twitterBearerToken || (await getCredentialByKey("twitter_bearer_token"))?.credentialValue;
+    return {
+      youtube: { configured: !!ytKey, source: ENV.youtubeApiKey ? "env" : ytKey ? "db" : "none" },
+      instagram: { configured: !!igToken, source: ENV.instagramAccessToken ? "env" : igToken ? "db" : "none" },
+      twitter: { configured: !!twToken, source: ENV.twitterBearerToken ? "env" : twToken ? "db" : "none" },
+    };
+  }),
+
+  saveApiKey: protectedProcedure
+    .input(z.object({
+      service: z.enum(["youtube", "instagram", "twitter"]),
+      value: z.string().min(1),
+    }))
+    .mutation(async ({ input }) => {
+      const keyMap = {
+        youtube: { credentialKey: "youtube_api_key", platform: "YouTube" as const, label: "YouTube Data API v3 Key" },
+        instagram: { credentialKey: "instagram_access_token", platform: "Instagram" as const, label: "Instagram Graph API Access Token" },
+        twitter: { credentialKey: "twitter_bearer_token", platform: "Instagram" as const, label: "Twitter/X API v2 Bearer Token" },
+      };
+      const meta = keyMap[input.service];
+      await upsertCredential({ ...meta, credentialValue: input.value, isActive: true });
+      return { success: true };
+    }),
+
+  removeApiKey: protectedProcedure
+    .input(z.object({ service: z.enum(["youtube", "instagram", "twitter"]) }))
+    .mutation(async ({ input }) => {
+      const keyMap = { youtube: "youtube_api_key", instagram: "instagram_access_token", twitter: "twitter_bearer_token" };
+      const db = await import("./db");
+      const cred = await db.getCredentialByKey(keyMap[input.service]);
+      if (cred) await db.deleteCredential(cred.id);
+      return { success: true };
+    }),
+
+  testApiKey: protectedProcedure
+    .input(z.object({ service: z.enum(["youtube", "instagram", "twitter"]) }))
+    .mutation(async ({ input }) => {
+      const keyMap = { youtube: "youtube_api_key", instagram: "instagram_access_token", twitter: "twitter_bearer_token" };
+      const cred = await getCredentialByKey(keyMap[input.service]);
+      const key = (input.service === "youtube" ? ENV.youtubeApiKey : input.service === "instagram" ? ENV.instagramAccessToken : ENV.twitterBearerToken) || cred?.credentialValue;
+      if (!key) return { success: false, message: "No API key configured" };
+      try {
+        if (input.service === "youtube") {
+          const r = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=id&id=dQw4w9WgXcQ&key=${key}`);
+          if (!r.ok) return { success: false, message: `YouTube API error: ${r.status} ${r.statusText}` };
+          return { success: true, message: "YouTube Data API v3 — connected" };
+        } else if (input.service === "instagram") {
+          const r = await fetch(`https://graph.instagram.com/me?fields=id,username&access_token=${key}`);
+          if (!r.ok) return { success: false, message: `Instagram API error: ${r.status} ${r.statusText}` };
+          const data = await r.json() as { username?: string };
+          return { success: true, message: `Instagram Graph API — connected as @${data.username ?? "unknown"}` };
+        } else {
+          const r = await fetch("https://api.twitter.com/2/users/by/username/twitter", { headers: { Authorization: `Bearer ${key}` } });
+          if (!r.ok) return { success: false, message: `Twitter API error: ${r.status} ${r.statusText}` };
+          return { success: true, message: "Twitter API v2 — connected" };
+        }
+      } catch (e: any) {
+        return { success: false, message: e.message ?? "Connection failed" };
+      }
     }),
 
   // Sync Controls
