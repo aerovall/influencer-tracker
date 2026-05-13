@@ -52,6 +52,13 @@ import {
   upsertChannel,
   upsertCredential,
   upsertPlatformAccount,
+  upsertSocialAccount,
+  upsertSocialPost,
+  insertSocialPostSnapshot,
+  updateSocialAccountLastChecked,
+  getAllSocialAccounts,
+  getSocialAccountById,
+  deleteSocialAccount,
 } from "./db";
 import {
   generateDailyReport,
@@ -131,6 +138,7 @@ const videosRouter = router({
       platform: z.string().optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
+      channelId: z.string().optional(),
     }).optional())
     .query(({ input }) => getAllVideos(input)),
 
@@ -491,7 +499,7 @@ const channelsRouter = router({
     .input(
       z.object({
         channelInput: z.string().min(1, "Channel URL or handle is required"),
-        influencerName: z.enum(["Levi", "NoBs", "Danielle"]),
+        influencerName: z.enum(["Levi", "NoBs", "Danielle"]).optional(),
       })
     )
     .mutation(async ({ input }) => {
@@ -526,7 +534,7 @@ const channelsRouter = router({
         const stats = statsMap.get(upload.videoId);
         await insertVideo({
           videoId: upload.ytVideoId,
-          influencerName: input.influencerName,
+          influencerName: input.influencerName ?? "Unknown",
           platform: "YouTube",
           channelId: channelInfo.channelId,
           videoUrl: upload.videoUrl,
@@ -593,7 +601,7 @@ const channelsRouter = router({
           // New video discovered
           await insertVideo({
             videoId: upload.ytVideoId,
-            influencerName: channel.influencerName,
+            influencerName: channel.influencerName ?? "Unknown",
             platform: "YouTube",
             channelId: input.channelId,
             videoUrl: upload.videoUrl,
@@ -650,6 +658,86 @@ const channelsRouter = router({
     }),
 });
 
+// ─── Social Accounts Router ─────────────────────────────────────────────────
+const socialAccountsRouter = router({
+  /** Link a new Instagram or X account. */
+  link: protectedProcedure
+    .input(z.object({
+      platform: z.enum(["Instagram", "X"]),
+      handle: z.string().min(1),
+    }))
+    .mutation(async ({ input }) => {
+      const { resolveInstagramAccount, resolveXAccount } = await import("./socialEngine");
+      const info = input.platform === "Instagram"
+        ? await resolveInstagramAccount(input.handle)
+        : await resolveXAccount(input.handle);
+      await upsertSocialAccount({
+        accountId: `${input.platform.toLowerCase()}_${info.handle}`,
+        platform: input.platform,
+        handle: info.handle,
+        displayName: info.displayName,
+        profileUrl: info.profileUrl,
+        thumbnailUrl: info.thumbnailUrl,
+        followerCount: info.followerCount,
+        postCount: info.postCount,
+        description: info.description,
+      });
+      return { success: true, account: { accountId: `${input.platform.toLowerCase()}_${info.handle}`, handle: info.handle, displayName: info.displayName, platform: input.platform } };
+    }),
+  /** List all linked social accounts, optionally filtered by platform. */
+  list: protectedProcedure
+    .input(z.object({ platform: z.enum(["Instagram", "X"]).optional() }).optional())
+    .query(async ({ input }) => getAllSocialAccounts(input?.platform)),
+  /** Unlink a social account. */
+  unlink: protectedProcedure
+    .input(z.object({ accountId: z.string() }))
+    .mutation(async ({ input }) => {
+      await deleteSocialAccount(input.accountId);
+      return { success: true };
+    }),
+  /** Manually trigger a sync for a social account. */
+  syncAccount: protectedProcedure
+    .input(z.object({ accountId: z.string() }))
+    .mutation(async ({ input }) => {
+      const account = await getSocialAccountById(input.accountId);
+      if (!account) throw new Error("Account not found");
+      const { fetchInstagramPosts, fetchXPosts, toSnapshotId } = await import("./socialEngine");
+      const posts = account.platform === "Instagram"
+        ? await fetchInstagramPosts(account.handle, 20)
+        : await fetchXPosts(account.handle, 20);
+      let newPosts = 0;
+      for (const post of posts) {
+        await upsertSocialPost({
+          postId: post.postId,
+          accountId: input.accountId,
+          platform: account.platform,
+          postUrl: post.postUrl,
+          title: post.title,
+          publishedDate: post.publishedDate,
+          thumbnailUrl: post.thumbnailUrl,
+        });
+        const today = new Date().toISOString().split("T")[0]!;
+        await insertSocialPostSnapshot({
+          snapshotId: toSnapshotId(post.postId, today),
+          postId: post.postId,
+          accountId: input.accountId,
+          platform: account.platform,
+          date: today,
+          views: post.views,
+          impressions: post.impressions,
+          likes: post.likes,
+          comments: post.comments,
+          shares: post.shares,
+          retweets: post.retweets,
+          engagementRate: undefined,
+        });
+        newPosts++;
+      }
+      await updateSocialAccountLastChecked(input.accountId, posts.length);
+      return { success: true, newPosts };
+    }),
+});
+
 // ─── App Router ──────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -670,6 +758,7 @@ export const appRouter = router({
   alerts: alertsRouter,
   export: exportRouter,
   channels: channelsRouter,
+  socialAccounts: socialAccountsRouter,
 });
 
 export type AppRouter = typeof appRouter;

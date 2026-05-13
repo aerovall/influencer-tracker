@@ -415,7 +415,7 @@ export async function runChannelSync(): Promise<{ newVideos: number; updatedStat
           // New video discovered on this channel
           await insertVideo({
             videoId: upload.ytVideoId,
-            influencerName: channel.influencerName,
+            influencerName: channel.influencerName ?? "Unknown",
             platform: "YouTube",
             channelId: channel.channelId,
             videoUrl: upload.videoUrl,
@@ -461,19 +461,89 @@ export async function runChannelSync(): Promise<{ newVideos: number; updatedStat
   return { newVideos, updatedStats, errors };
 }
 
+// ─── Social Account Sync ─────────────────────────────────────────────────────
+/**
+ * Sync all active Instagram and X accounts:
+ * - Fetch recent posts and upsert them
+ * - Append a daily snapshot for each post (append-only, never overwrite)
+ */
+export async function runSocialAccountSync(): Promise<{ newPosts: number; snapshots: number; errors: string[] }> {
+  const { getAllSocialAccounts, upsertSocialPost, insertSocialPostSnapshot, updateSocialAccountLastChecked } = await import("./db");
+  const { fetchInstagramPosts, fetchXPosts, toSnapshotId } = await import("./socialEngine");
+  const today = new Date().toISOString().split("T")[0]!;
+  let newPosts = 0;
+  let snapshots = 0;
+  const errors: string[] = [];
+
+  try {
+    const accounts = await getAllSocialAccounts();
+    for (const account of accounts) {
+      try {
+        const posts = account.platform === "Instagram"
+          ? await fetchInstagramPosts(account.handle, 20)
+          : await fetchXPosts(account.handle, 20);
+
+        for (const post of posts) {
+          try {
+            await upsertSocialPost({
+              postId: post.postId,
+              accountId: post.accountId,
+              platform: post.platform,
+              postUrl: post.postUrl,
+              title: post.title ?? undefined,
+              publishedDate: post.publishedDate ?? undefined,
+              thumbnailUrl: post.thumbnailUrl ?? undefined,
+            });
+            newPosts++;
+
+            // Append daily snapshot (never overwrite)
+            const snapshotId = toSnapshotId(post.postId, today);
+            await insertSocialPostSnapshot({
+              snapshotId,
+              postId: post.postId,
+              accountId: post.accountId,
+              platform: post.platform,
+              date: today,
+              views: post.views,
+              impressions: post.impressions,
+              likes: post.likes,
+              comments: post.comments,
+              shares: post.shares,
+              retweets: post.retweets,
+            });
+            snapshots++;
+          } catch (e) {
+            errors.push(`Post ${post.postId}: ${String(e)}`);
+          }
+        }
+
+        await updateSocialAccountLastChecked(account.accountId, posts.length);
+      } catch (e) {
+        errors.push(`Account ${account.accountId}: ${String(e)}`);
+      }
+    }
+  } catch (e) {
+    errors.push(`Social sync failed: ${String(e)}`);
+  }
+
+  return { newPosts, snapshots, errors };
+}
+
 export async function runFullDailySync(): Promise<{
   discovery: Awaited<ReturnType<typeof runVideoDiscovery>>;
   snapshot: Awaited<ReturnType<typeof runViewCountSnapshot>>;
   channelSync: Awaited<ReturnType<typeof runChannelSync>>;
+  socialSync: Awaited<ReturnType<typeof runSocialAccountSync>>;
   alerts: number;
 }> {
-  // Run channel sync (new uploads + stats) in parallel with legacy platform discovery
-  const [discovery, channelSync] = await Promise.all([
+  // Run channel sync + social sync + legacy platform discovery in parallel
+  const [discovery, channelSync, socialSync] = await Promise.all([
     runVideoDiscovery(),
     runChannelSync(),
+    runSocialAccountSync(),
   ]);
   const snapshot = await runViewCountSnapshot();
   const alerts = await runAlertEvaluation();
   await generateDailyReport();
-  return { discovery, snapshot, channelSync, alerts };
+  return { discovery, snapshot, channelSync, socialSync, alerts };
 }

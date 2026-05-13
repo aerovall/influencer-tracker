@@ -124,3 +124,19 @@
 - [x] UI: Per-video shill table with inline add/edit/delete rows
 - [x] Update daily cron to iterate channels and check for new uploads + stats
 - [x] Update tests for new channel and shill flows
+
+## v1.3 — Multi-Platform Refactor
+- [x] DB: add social_accounts table (platform: youtube|instagram|x, account_id, handle, display_name, thumbnail_url, follower_count, last_checked_at)
+- [x] DB: add social_posts table (post_id, account_id, platform, post_url, title, published_date, views, likes, comments, shares/retweets, impressions)
+- [x] DB: add post_snapshots table (append-only daily stats per post)
+- [x] Remove influencerName FK from youtube_channels table (channels are standalone)
+- [x] tRPC: remove influencerName from channels.link input
+- [x] tRPC: add socialAccounts router (link, list, unlink, syncAccount)
+- [x] UI: Remove "Assign to Influencer" from Link YouTube Channel dialog
+- [x] UI: Add Instagram account link form and account cards on Channels page
+- [x] UI: Add X (Twitter) account link form and account cards on Channels page
+- [x] UI: Replace "All Influencers" filter in Video Catalog with channel name dropdown
+- [x] UI: Per-video shill table — remove video_id column, show shill_id, product_brand, timestamp, length_seconds, promo_type
+- [x] Server: Instagram public metric fetcher (profile + recent posts via public embed/scrape)
+- [x] Server: X public metric fetcher (profile + recent posts via public embed/scrape)
+- [x] Daily cron: sync Instagram and X accounts for new posts + stats

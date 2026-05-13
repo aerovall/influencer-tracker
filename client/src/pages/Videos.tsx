@@ -149,13 +149,14 @@ function AddVideoDialog({ onSuccess }: { onSuccess: () => void }) {
 }
 
 export default function Videos() {
-  const [influencerFilter, setInfluencerFilter] = useState("all");
+  const [channelFilter, setChannelFilter] = useState("all");
   const [platformFilter, setPlatformFilter] = useState("all");
   const [search, setSearch] = useState("");
 
   const utils = trpc.useUtils();
+  const { data: channels } = trpc.channels.list.useQuery();
   const { data: videos, isLoading } = trpc.videos.list.useQuery({
-    influencerName: influencerFilter === "all" ? undefined : influencerFilter,
+    channelId: channelFilter === "all" ? undefined : channelFilter,
     platform: platformFilter === "all" ? undefined : platformFilter,
   });
 
@@ -191,13 +192,15 @@ export default function Videos() {
           onChange={(e) => setSearch(e.target.value)}
           className="max-w-xs"
         />
-        <Select value={influencerFilter} onValueChange={setInfluencerFilter}>
-          <SelectTrigger className="w-36">
-            <SelectValue placeholder="Influencer" />
+        <Select value={channelFilter} onValueChange={setChannelFilter}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="All Channels" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Influencers</SelectItem>
-            {INFLUENCERS.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
+            <SelectItem value="all">All Channels</SelectItem>
+            {(channels ?? []).map((c) => (
+              <SelectItem key={c.channelId} value={c.channelId}>{c.channelName}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={platformFilter} onValueChange={setPlatformFilter}>

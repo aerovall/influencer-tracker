@@ -64,7 +64,7 @@ export const youtubeChannels = mysqlTable("youtube_channels", {
   channelId: varchar("channel_id", { length: 100 }).notNull().unique(),
   channelHandle: varchar("channel_handle", { length: 255 }),
   channelName: varchar("channel_name", { length: 255 }).notNull(),
-  influencerName: varchar("influencer_name", { length: 100 }).notNull(),
+  influencerName: varchar("influencer_name", { length: 100 }),  // nullable — no influencer assignment
   thumbnailUrl: text("thumbnail_url"),
   subscriberCount: bigint("subscriber_count", { mode: "number" }).default(0),
   videoCount: int("video_count").default(0),
@@ -236,3 +236,62 @@ export const syncLog = mysqlTable("sync_log", {
 
 export type SyncLog = typeof syncLog.$inferSelect;
 export type InsertSyncLog = typeof syncLog.$inferInsert;
+
+// ─── Social Accounts (Instagram + X) ─────────────────────────────────────────
+export const socialAccounts = mysqlTable("social_accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  accountId: varchar("account_id", { length: 255 }).notNull().unique(),
+  platform: mysqlEnum("platform", ["Instagram", "X"]).notNull(),
+  handle: varchar("handle", { length: 255 }).notNull(),
+  displayName: varchar("display_name", { length: 255 }),
+  profileUrl: text("profile_url"),
+  thumbnailUrl: text("thumbnail_url"),
+  followerCount: bigint("follower_count", { mode: "number" }).default(0),
+  postCount: int("post_count").default(0),
+  description: text("description"),
+  isActive: boolean("isActive").default(true).notNull(),
+  lastCheckedAt: timestamp("last_checked_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SocialAccount = typeof socialAccounts.$inferSelect;
+export type InsertSocialAccount = typeof socialAccounts.$inferInsert;
+
+// ─── Social Posts (Instagram + X) ────────────────────────────────────────────
+export const socialPosts = mysqlTable("social_posts", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: varchar("post_id", { length: 255 }).notNull().unique(),
+  accountId: varchar("account_id", { length: 255 }).notNull(),
+  platform: mysqlEnum("platform", ["Instagram", "X"]).notNull(),
+  postUrl: text("post_url").notNull(),
+  title: text("title"),
+  publishedDate: varchar("published_date", { length: 10 }),
+  thumbnailUrl: text("thumbnail_url"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SocialPost = typeof socialPosts.$inferSelect;
+export type InsertSocialPost = typeof socialPosts.$inferInsert;
+
+// ─── Social Post Snapshots (append-only daily stats) ─────────────────────────
+export const socialPostSnapshots = mysqlTable("social_post_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  snapshotId: varchar("snapshot_id", { length: 150 }).notNull().unique(),
+  postId: varchar("post_id", { length: 255 }).notNull(),
+  accountId: varchar("account_id", { length: 255 }).notNull(),
+  platform: mysqlEnum("platform", ["Instagram", "X"]).notNull(),
+  date: varchar("date", { length: 10 }).notNull(),
+  views: bigint("views", { mode: "number" }).default(0),
+  impressions: bigint("impressions", { mode: "number" }).default(0),
+  likes: bigint("likes", { mode: "number" }).default(0),
+  comments: bigint("comments", { mode: "number" }).default(0),
+  shares: bigint("shares", { mode: "number" }).default(0),
+  retweets: bigint("retweets", { mode: "number" }).default(0),
+  engagementRate: decimal("engagement_rate", { precision: 8, scale: 4 }).default("0"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SocialPostSnapshot = typeof socialPostSnapshots.$inferSelect;
+export type InsertSocialPostSnapshot = typeof socialPostSnapshots.$inferInsert;

@@ -15,6 +15,9 @@ import {
   videos,
   viewCounts,
   youtubeChannels,
+  socialAccounts,
+  socialPosts,
+  socialPostSnapshots,
 } from "../drizzle/schema";
 import type { InsertYoutubeChannel } from "../drizzle/schema";
 import type {
@@ -139,6 +142,7 @@ export async function getAllVideos(filters?: {
   platform?: string;
   dateFrom?: string;
   dateTo?: string;
+  channelId?: string;
 }) {
   const db = await getDb();
   if (!db) return [];
@@ -147,6 +151,7 @@ export async function getAllVideos(filters?: {
   if (filters?.platform) conditions.push(eq(videos.platform, filters.platform as "YouTube" | "Instagram" | "TikTok"));
   if (filters?.dateFrom) conditions.push(gte(videos.publishedDate, filters.dateFrom));
   if (filters?.dateTo) conditions.push(lte(videos.publishedDate, filters.dateTo));
+  if (filters?.channelId) conditions.push(eq(videos.channelId, filters.channelId));
   return db.select().from(videos).where(and(...conditions)).orderBy(desc(videos.publishedDate));
 }
 
@@ -581,4 +586,115 @@ export async function getActiveChannels() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(youtubeChannels).where(eq(youtubeChannels.isActive, true));
+}
+
+// ─── Social Accounts ──────────────────────────────────────────────────────────
+export async function upsertSocialAccount(data: {
+  accountId: string;
+  platform: "Instagram" | "X";
+  handle: string;
+  displayName?: string | null;
+  profileUrl?: string | null;
+  thumbnailUrl?: string | null;
+  followerCount?: number;
+  postCount?: number;
+  description?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .insert(socialAccounts)
+    .values({ ...data, isActive: true })
+    .onDuplicateKeyUpdate({
+      set: {
+        displayName: data.displayName ?? null,
+        thumbnailUrl: data.thumbnailUrl ?? null,
+        followerCount: data.followerCount ?? 0,
+        postCount: data.postCount ?? 0,
+        description: data.description ?? null,
+        updatedAt: new Date(),
+      },
+    });
+}
+
+export async function getAllSocialAccounts(platform?: "Instagram" | "X") {
+  const db = await getDb();
+  if (!db) return [];
+  const query = db.select().from(socialAccounts).where(eq(socialAccounts.isActive, true));
+  if (platform) {
+    return db.select().from(socialAccounts).where(and(eq(socialAccounts.isActive, true), eq(socialAccounts.platform, platform)));
+  }
+  return query;
+}
+
+export async function getSocialAccountById(accountId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(socialAccounts).where(eq(socialAccounts.accountId, accountId)).limit(1);
+  return rows[0] ?? null;
+}
+
+export async function deleteSocialAccount(accountId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(socialAccounts).where(eq(socialAccounts.accountId, accountId));
+}
+
+export async function updateSocialAccountLastChecked(accountId: string, postCount?: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(socialAccounts)
+    .set({ lastCheckedAt: new Date(), ...(postCount !== undefined ? { postCount } : {}) })
+    .where(eq(socialAccounts.accountId, accountId));
+}
+
+export async function upsertSocialPost(data: {
+  postId: string;
+  accountId: string;
+  platform: "Instagram" | "X";
+  postUrl: string;
+  title?: string | null;
+  publishedDate?: string | null;
+  thumbnailUrl?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .insert(socialPosts)
+    .values({ ...data, isActive: true })
+    .onDuplicateKeyUpdate({ set: { title: data.title ?? null, thumbnailUrl: data.thumbnailUrl ?? null } });
+}
+
+export async function getSocialPostsByAccount(accountId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(socialPosts)
+    .where(and(eq(socialPosts.accountId, accountId), eq(socialPosts.isActive, true)))
+    .orderBy(desc(socialPosts.publishedDate))
+    .limit(50);
+}
+
+export async function insertSocialPostSnapshot(data: {
+  snapshotId: string;
+  postId: string;
+  accountId: string;
+  platform: "Instagram" | "X";
+  date: string;
+  views?: number;
+  impressions?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  retweets?: number;
+  engagementRate?: string;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .insert(socialPostSnapshots)
+    .values(data)
+    .onDuplicateKeyUpdate({ set: { likes: data.likes ?? 0, comments: data.comments ?? 0, retweets: data.retweets ?? 0 } });
 }
