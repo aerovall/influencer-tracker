@@ -71,9 +71,12 @@ import {
 import { extractYouTubeVideoId, fetchYouTubeVideoInfo } from "./platformApi";
 import {
   fetchChannelUploads,
+  fetchVideoStatsV3,
+  fetchChannelStatsV3,
   resolveChannel,
   toDbVideoId,
 } from "./channelEngine";
+import { ENV } from "./_core/env";
 import { updateVideoMeta } from "./db";
 
 function todayStr() {
@@ -580,10 +583,36 @@ const channelsRouter = router({
       // the channel listing. No per-video API calls needed (avoids bot-detection).
       const uploads = await fetchChannelUploads(input.channelId, 30);
 
+      // Optionally enrich with YouTube Data API v3 (likes, comments, exact view count)
+      const apiKey = ENV.youtubeApiKey;
+      let v3StatsMap = new Map<string, any>();
+      if (apiKey) {
+        const rawIds = uploads.map((u) => u.videoId);
+        v3StatsMap = await fetchVideoStatsV3(rawIds, apiKey);
+      }
+
+      // Also update channel subscriber count via Data API v3 if key available
+      if (apiKey) {
+        const channelStats = await fetchChannelStatsV3(input.channelId, apiKey);
+        if (channelStats && channelStats.subscriberCount > 0) {
+          await upsertChannel({
+            channelId: input.channelId,
+            channelName: channel.channelName,
+            channelHandle: channel.channelHandle ?? undefined,
+            influencerName: channel.influencerName ?? undefined,
+            thumbnailUrl: channel.thumbnailUrl ?? undefined,
+            subscriberCount: channelStats.subscriberCount,
+            videoCount: channelStats.videoCount,
+            isActive: true,
+          });
+        }
+      }
+
       let newVideos = 0;
       let updatedStats = 0;
 
       for (const upload of uploads) {
+        const v3 = v3StatsMap.get(upload.videoId);
         const existing = await getVideoByVideoId(upload.ytVideoId);
 
         if (!existing) {
@@ -594,11 +623,11 @@ const channelsRouter = router({
             platform: "YouTube",
             channelId: input.channelId,
             videoUrl: upload.videoUrl,
-            title: upload.title,
-            publishedDate: upload.publishedDate,
+            title: v3?.title ?? upload.title,
+            publishedDate: v3?.publishedAt ?? upload.publishedDate,
             dateAdded: todayStr(),
-            thumbnailUrl: upload.thumbnailUrl,
-            durationSeconds: upload.durationSeconds,
+            thumbnailUrl: v3?.thumbnailUrl ?? upload.thumbnailUrl,
+            durationSeconds: v3?.durationSeconds ?? upload.durationSeconds,
             isActive: true,
             isSeen: false,  // triggers the Channels nav badge
           });
@@ -606,9 +635,9 @@ const channelsRouter = router({
         } else if (upload.title && upload.title !== "Untitled" && existing.title === "Untitled") {
           // Back-fill title/duration for videos inserted without stats
           await updateVideoMeta(upload.ytVideoId, {
-            title: upload.title,
-            durationSeconds: upload.durationSeconds,
-            thumbnailUrl: upload.thumbnailUrl,
+            title: v3?.title ?? upload.title,
+            durationSeconds: v3?.durationSeconds ?? upload.durationSeconds,
+            thumbnailUrl: v3?.thumbnailUrl ?? upload.thumbnailUrl,
           });
         }
 
@@ -618,9 +647,9 @@ const channelsRouter = router({
           countId,
           videoId: upload.ytVideoId,
           date: todayStr(),
-          viewCount: upload.viewCount,
-          likes: upload.likeCount,
-          comments: 0,
+          viewCount: v3?.viewCount ?? upload.viewCount,
+          likes: v3?.likeCount ?? upload.likeCount,
+          comments: v3?.commentCount ?? 0,
           shares: 0,
           engagementRate: "0",
         });
@@ -696,6 +725,12 @@ const socialAccountsRouter = router({
       await deleteSocialAccount(input.accountId);
       return { success: true };
     }),
+  /** Check which social API keys are configured. */
+  apiStatus: protectedProcedure.query(() => ({
+    instagram: !!ENV.instagramAccessToken,
+    twitter: !!ENV.twitterBearerToken,
+    youtube: !!ENV.youtubeApiKey,
+  })),
   /** Manually trigger a sync for a social account. */
   syncAccount: protectedProcedure
     .input(z.object({ accountId: z.string() }))

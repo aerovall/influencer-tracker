@@ -284,11 +284,25 @@ export async function resolveChannel(input: string): Promise<ChannelInfo> {
   const thumbs = meta?.thumbnail ?? header?.avatar ?? header?.thumbnail;
   const thumbnailUrl = bestThumb(thumbs);
 
-  const subRaw =
-    header?.subscribers_count_text?.toString() ??
-    header?.subscriber_count_text?.toString() ??
-    (header as any)?.subscriberCountText?.toString() ??
-    "";
+  // PageHeader structure: content.metadata.metadata_rows[N].metadata_parts[0].text.text
+  // e.g. "232K subscribers"
+  const subRaw: string = (() => {
+    // New PageHeader format
+    const rows = (header as any)?.content?.metadata?.metadata_rows ?? [];
+    for (const row of rows) {
+      for (const part of row?.metadata_parts ?? []) {
+        const text: string = part?.text?.text ?? part?.text?.runs?.[0]?.text ?? "";
+        if (text.toLowerCase().includes("subscriber")) return text;
+      }
+    }
+    // Legacy C4TabbedHeader format
+    return (
+      header?.subscribers_count_text?.toString() ??
+      header?.subscriber_count_text?.toString() ??
+      (header as any)?.subscriberCountText?.toString() ??
+      ""
+    );
+  })();
   const subscriberCount = parseSubscriberCount(subRaw);
 
   const vcRaw =
@@ -413,4 +427,116 @@ export async function fetchVideoStats(_rawVideoId: string): Promise<VideoStats |
 export async function fetchBulkVideoStats(_rawVideoIds: string[], _concurrency = 3): Promise<Map<string, VideoStats>> {
   console.warn("[channelEngine] fetchBulkVideoStats() is deprecated — use fetchChannelVideoStats() instead");
   return new Map();
+}
+
+// ─── YouTube Data API v3 (requires YOUTUBE_API_KEY) ──────────────────────────
+
+export interface YouTubeVideoStats {
+  videoId: string;
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
+  durationSeconds: number;
+  title: string;
+  thumbnailUrl: string | null;
+  publishedAt: string; // YYYY-MM-DD
+}
+
+export interface YouTubeChannelStats {
+  subscriberCount: number;
+  videoCount: number;
+  viewCount: number;
+}
+
+/**
+ * Fetch per-video stats (views, likes, comments, duration) using YouTube Data API v3.
+ * Requires YOUTUBE_API_KEY environment variable.
+ * Returns null for each video if the API key is missing or the request fails.
+ */
+export async function fetchVideoStatsV3(
+  rawVideoIds: string[],
+  apiKey: string
+): Promise<Map<string, YouTubeVideoStats>> {
+  const results = new Map<string, YouTubeVideoStats>();
+  if (!apiKey || rawVideoIds.length === 0) return results;
+
+  // YouTube Data API allows up to 50 IDs per request
+  const BATCH = 50;
+  for (let i = 0; i < rawVideoIds.length; i += BATCH) {
+    const batch = rawVideoIds.slice(i, i + BATCH);
+    const ids = batch.join(",");
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails,snippet&id=${ids}&key=${apiKey}`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error(`[channelEngine] YouTube Data API v3 error: ${res.status} ${await res.text()}`);
+        continue;
+      }
+      const data = await res.json() as any;
+      for (const item of data?.items ?? []) {
+        const vid = item.id as string;
+        const stats = item.statistics ?? {};
+        const details = item.contentDetails ?? {};
+        const snippet = item.snippet ?? {};
+
+        // Parse ISO 8601 duration (PT9M17S → 557 seconds)
+        const durStr: string = details.duration ?? "";
+        const durMatch = durStr.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+        const durationSeconds = durMatch
+          ? (parseInt(durMatch[1] ?? "0") * 3600) +
+            (parseInt(durMatch[2] ?? "0") * 60) +
+            parseInt(durMatch[3] ?? "0")
+          : 0;
+
+        const thumbnails = snippet.thumbnails ?? {};
+        const thumbnailUrl: string | null =
+          thumbnails.maxres?.url ?? thumbnails.high?.url ?? thumbnails.medium?.url ?? null;
+
+        const publishedAt = (snippet.publishedAt as string ?? "").slice(0, 10);
+
+        results.set(vid, {
+          videoId: vid,
+          viewCount: parseInt(stats.viewCount ?? "0", 10) || 0,
+          likeCount: parseInt(stats.likeCount ?? "0", 10) || 0,
+          commentCount: parseInt(stats.commentCount ?? "0", 10) || 0,
+          durationSeconds,
+          title: snippet.title ?? "Untitled",
+          thumbnailUrl,
+          publishedAt,
+        });
+      }
+    } catch (err) {
+      console.error(`[channelEngine] fetchVideoStatsV3 batch failed:`, err);
+    }
+  }
+  return results;
+}
+
+/**
+ * Fetch channel-level stats (subscriber count, video count, total views) using
+ * YouTube Data API v3. Requires YOUTUBE_API_KEY environment variable.
+ */
+export async function fetchChannelStatsV3(
+  channelId: string,
+  apiKey: string
+): Promise<YouTubeChannelStats | null> {
+  if (!apiKey) return null;
+  try {
+    const url = `https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${channelId}&key=${apiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.error(`[channelEngine] YouTube Data API v3 channel stats error: ${res.status}`);
+      return null;
+    }
+    const data = await res.json() as any;
+    const stats = data?.items?.[0]?.statistics ?? {};
+    return {
+      subscriberCount: parseInt(stats.subscriberCount ?? "0", 10) || 0,
+      videoCount: parseInt(stats.videoCount ?? "0", 10) || 0,
+      viewCount: parseInt(stats.viewCount ?? "0", 10) || 0,
+    };
+  } catch (err) {
+    console.error(`[channelEngine] fetchChannelStatsV3 failed:`, err);
+    return null;
+  }
 }

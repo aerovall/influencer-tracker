@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, RefreshCw, Trash2, Youtube, ChevronRight, ChevronDown,
   Eye, ThumbsUp, MessageCircle, Clock, ExternalLink, Pencil, Check, X,
-  Instagram, Twitter
+  Instagram, Twitter, AlertCircle
 } from "lucide-react";
 
 const PROMO_TYPES = [
@@ -657,12 +657,31 @@ function YouTubeTab() {
 function SocialTab({ platform }: { platform: "Instagram" | "X" }) {
   const utils = trpc.useUtils();
   const { data: accounts, isLoading } = trpc.socialAccounts.list.useQuery({ platform });
+  const { data: apiStatus } = trpc.socialAccounts.apiStatus.useQuery();
   const isInstagram = platform === "Instagram";
   const Icon = isInstagram ? Instagram : Twitter;
   const color = isInstagram ? "text-pink-500" : "text-sky-400";
+  const apiConnected = isInstagram ? apiStatus?.instagram : apiStatus?.twitter;
 
   return (
     <div className="space-y-4">
+      {/* API key status banner */}
+      {apiStatus && !apiConnected && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+          <AlertCircle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+          <div className="text-sm">
+            <p className="font-medium text-amber-300">
+              {isInstagram ? "Instagram API key required" : "Twitter/X API key required"}
+            </p>
+            <p className="text-amber-400/80 mt-0.5 text-xs">
+              {isInstagram
+                ? "Set INSTAGRAM_ACCESS_TOKEN in Settings → Secrets to enable follower counts and post data. Requires a Facebook Developer account with Instagram Graph API."
+                : "Set TWITTER_BEARER_TOKEN in Settings → Secrets to enable follower counts and tweet data. Get a free Bearer Token at developer.x.com."}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">{accounts?.length ?? 0} account{(accounts?.length ?? 0) !== 1 ? "s" : ""} linked</span>
         <LinkSocialDialog platform={platform} onLinked={() => utils.socialAccounts.list.invalidate()} />
@@ -679,7 +698,7 @@ function SocialTab({ platform }: { platform: "Instagram" | "X" }) {
             <div className="text-center">
               <p className="font-semibold">No {platform} accounts linked</p>
               <p className="text-sm text-muted-foreground mt-1">
-                Link a public {platform} account to track {isInstagram ? "views, impressions, likes, and comments" : "impressions, likes, retweets, and replies"} daily.
+                Link a {platform} account to track {isInstagram ? "likes and comments" : "impressions, likes, retweets, and replies"} daily.
               </p>
             </div>
             <LinkSocialDialog platform={platform} onLinked={() => utils.socialAccounts.list.invalidate()} />

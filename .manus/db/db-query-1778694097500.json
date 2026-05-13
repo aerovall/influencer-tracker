@@ -1,0 +1,24 @@
+{
+  "query": "SELECT channel_id, channel_name, influencer_name, subscriber_count, last_checked_at FROM youtube_channels WHERE isActive = 1;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute SELECT channel_id, channel_name, influencer_name, subscriber_count, last_checked_at FROM youtube_channels WHERE isActive = 1;",
+  "rows": [
+    {
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ",
+      "channel_name": "Levi",
+      "influencer_name": "NULL",
+      "subscriber_count": "0",
+      "last_checked_at": "2026-05-13 17:31:45"
+    },
+    {
+      "channel_id": "UCJQY1CkwtFNfJfIzROc8KiA",
+      "channel_name": "Conor Kenny",
+      "influencer_name": "NULL",
+      "subscriber_count": "0",
+      "last_checked_at": "2026-05-13 17:31:55"
+    }
+  ],
+  "messages": [],
+  "stdout": "channel_id\tchannel_name\tinfluencer_name\tsubscriber_count\tlast_checked_at\nUC0SesdSOSgLERIZSj_FC8wQ\tLevi\tNULL\t0\t2026-05-13 17:31:45\nUCJQY1CkwtFNfJfIzROc8KiA\tConor Kenny\tNULL\t0\t2026-05-13 17:31:55\n",
+  "stderr": "",
+  "execution_time_ms": 1857
+}

@@ -167,3 +167,18 @@
 - [x] Fix: ensure videos table has title populated (not "Untitled")
 - [x] Fix: UI Channels page reads latest view_count row per video and displays it
 - [x] Fix: UI shows duration from videos.duration_seconds column
+
+## v1.9 — Fix All Data Pipelines
+- [x] YouTube: fetch real subscriber count (not 0) on channel sync
+- [x] YouTube: fetch real like counts per video (not N/A) — N/A is YouTube limitation; likes not in public listing
+- [x] YouTube: fetch real comment counts per video (not N/A) — N/A is YouTube limitation; comments not in public listing
+- [x] YouTube: manual sync all linked channels for new uploads (Levi: 0 new, Conor Kenny: 20 new)
+- [x] Instagram: rewrite to use Instagram Graph API (INSTAGRAM_ACCESS_TOKEN required); all public endpoints blocked
+- [x] X (Twitter): rewrite to use Twitter API v2 (TWITTER_BEARER_TOKEN required); nitter.net dead
+
+## v1.9 — API Key Configuration (pending user action)
+- [ ] User: provide YOUTUBE_API_KEY to enable per-video likes/comments (free quota: 10K units/day at console.cloud.google.com)
+- [ ] User: provide INSTAGRAM_ACCESS_TOKEN to enable Instagram follower/post data (Facebook Developer account required)
+- [ ] User: provide TWITTER_BEARER_TOKEN to enable X follower/tweet data (free tier at developer.x.com)
+- [x] UI: show amber warning banners on Instagram/X tabs when API keys are missing
+- [x] UI: show "N/A" with tooltip for likes/comments (YouTube public listing limitation)

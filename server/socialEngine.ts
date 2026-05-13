@@ -2,17 +2,19 @@
  * socialEngine.ts
  * Public-data fetchers for Instagram and X (Twitter) accounts and posts.
  *
- * Approach:
- * - Instagram: Uses the public oEmbed endpoint + profile scraping via public
- *   Instagram pages (no login required for public accounts).
- * - X (Twitter): Uses the public oEmbed endpoint + nitter.net as a public
- *   scraping proxy (no API key required for public accounts).
+ * Reality check (2025):
+ * - Instagram: All public scraping endpoints are blocked. Requires Instagram
+ *   Graph API with a valid access token (Facebook Developer account + connected
+ *   Instagram Business/Creator account).
+ * - X (Twitter): nitter.net is dead (empty responses). Requires Twitter API v2
+ *   Bearer token for profile lookups and tweet fetching.
  *
- * All functions return null / empty arrays gracefully on failure so the
- * daily sync never crashes the whole pipeline.
+ * Both integrations are optional — the app works without them, but follower
+ * counts and post data will not be available until API keys are configured.
+ * Set INSTAGRAM_ACCESS_TOKEN and TWITTER_BEARER_TOKEN environment variables.
  */
 
-import { nanoid } from "nanoid";
+import { ENV } from "./_core/env.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +28,7 @@ export interface SocialAccountInfo {
   followerCount: number;
   postCount: number;
   description: string | null;
+  apiConnected: boolean;   // true if API key is configured and working
 }
 
 export interface SocialPostInfo {
@@ -36,7 +39,7 @@ export interface SocialPostInfo {
   title: string | null;
   publishedDate: string | null;  // YYYY-MM-DD
   thumbnailUrl: string | null;
-  // Initial stats
+  // Stats
   views: number;
   impressions: number;
   likes: number;
@@ -51,19 +54,18 @@ function todayStr(): string {
   return new Date().toISOString().split("T")[0]!;
 }
 
-async function fetchWithTimeout(url: string, timeoutMs = 10_000): Promise<Response> {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 10_000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    return await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/json,*/*",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        ...options.headers,
       },
+      ...options,
     });
-    return res;
   } finally {
     clearTimeout(timer);
   }
@@ -72,264 +74,356 @@ async function fetchWithTimeout(url: string, timeoutMs = 10_000): Promise<Respon
 // ─── Instagram ────────────────────────────────────────────────────────────────
 
 /**
- * Resolve an Instagram handle to account metadata using public profile page.
- * Returns a best-effort SocialAccountInfo — follower/post counts may be 0
- * if Instagram's public page has changed its structure.
+ * Resolve an Instagram handle to account metadata.
+ *
+ * Uses Instagram Graph API if INSTAGRAM_ACCESS_TOKEN is set.
+ * Returns a stub with apiConnected=false if no token is available.
+ *
+ * Instagram Graph API setup:
+ * 1. Create a Facebook Developer account at https://developers.facebook.com
+ * 2. Create an app with Instagram Graph API product
+ * 3. Connect an Instagram Business or Creator account
+ * 4. Generate a long-lived access token
+ * 5. Set INSTAGRAM_ACCESS_TOKEN environment variable
  */
 export async function resolveInstagramAccount(handle: string): Promise<SocialAccountInfo> {
-  // Normalise handle
-  const cleanHandle = handle.replace(/^@/, "").replace(/https?:\/\/(www\.)?instagram\.com\//i, "").replace(/\/$/, "");
+  const cleanHandle = handle
+    .replace(/^@/, "")
+    .replace(/https?:\/\/(www\.)?instagram\.com\//i, "")
+    .replace(/\/$/, "");
   const profileUrl = `https://www.instagram.com/${cleanHandle}/`;
   const accountId = `ig_${cleanHandle.toLowerCase()}`;
+  const token = ENV.instagramAccessToken;
 
-  let displayName = cleanHandle;
-  let thumbnailUrl: string | null = null;
-  let followerCount = 0;
-  let postCount = 0;
-  let description: string | null = null;
-
-  try {
-    // Try oEmbed for basic info
-    const oembedUrl = `https://www.instagram.com/api/v1/users/web_profile_info/?username=${cleanHandle}`;
-    // Instagram's web_profile_info requires cookies; fall back to page scrape
-    const pageRes = await fetchWithTimeout(profileUrl);
-    const html = await pageRes.text();
-
-    // Extract meta tags from the public profile page
-    const ogTitle = html.match(/<meta property="og:title" content="([^"]+)"/)?.[1];
-    const ogDesc = html.match(/<meta property="og:description" content="([^"]+)"/)?.[1];
-    const ogImage = html.match(/<meta property="og:image" content="([^"]+)"/)?.[1];
-
-    if (ogTitle) displayName = ogTitle.replace(/ \(@[^)]+\).*$/, "").trim();
-    if (ogImage) thumbnailUrl = ogImage;
-    if (ogDesc) {
-      description = ogDesc;
-      // Try to parse "X Followers, Y Following, Z Posts"
-      const followerMatch = ogDesc.match(/([\d,]+)\s+Followers/i);
-      const postMatch = ogDesc.match(/([\d,]+)\s+Posts/i);
-      if (followerMatch) followerCount = parseInt(followerMatch[1].replace(/,/g, ""), 10) || 0;
-      if (postMatch) postCount = parseInt(postMatch[1].replace(/,/g, ""), 10) || 0;
-    }
-  } catch {
-    // Silently fall back to defaults
+  if (!token) {
+    return {
+      accountId,
+      platform: "Instagram",
+      handle: cleanHandle,
+      displayName: cleanHandle,
+      profileUrl,
+      thumbnailUrl: null,
+      followerCount: 0,
+      postCount: 0,
+      description: "Instagram API key not configured. Set INSTAGRAM_ACCESS_TOKEN to enable data fetching.",
+      apiConnected: false,
+    };
   }
 
-  return {
-    accountId,
-    platform: "Instagram",
-    handle: cleanHandle,
-    displayName,
-    profileUrl,
-    thumbnailUrl,
-    followerCount,
-    postCount,
-    description,
-  };
+  try {
+    // Step 1: Get the Instagram user ID from the handle
+    const searchRes = await fetchWithTimeout(
+      `https://graph.instagram.com/v19.0/ig_hashtag_search?user_id=me&q=${encodeURIComponent(cleanHandle)}&access_token=${token}`,
+      {},
+      8000
+    );
+
+    // Simpler approach: use the /me endpoint if the token is for this account
+    // or use the Business Discovery API for other accounts
+    const meRes = await fetchWithTimeout(
+      `https://graph.instagram.com/v19.0/me?fields=id,username,name,biography,followers_count,media_count,profile_picture_url&access_token=${token}`,
+      {},
+      8000
+    );
+
+    if (!meRes.ok) {
+      const errText = await meRes.text();
+      console.error(`[socialEngine] Instagram Graph API error: ${meRes.status} ${errText}`);
+      return {
+        accountId,
+        platform: "Instagram",
+        handle: cleanHandle,
+        displayName: cleanHandle,
+        profileUrl,
+        thumbnailUrl: null,
+        followerCount: 0,
+        postCount: 0,
+        description: `Instagram API error: ${meRes.status}`,
+        apiConnected: false,
+      };
+    }
+
+    const me = await meRes.json() as any;
+
+    // If the token is for a different account, use Business Discovery API
+    let userData = me;
+    if (me.username?.toLowerCase() !== cleanHandle.toLowerCase()) {
+      // Try Business Discovery API
+      const bizRes = await fetchWithTimeout(
+        `https://graph.instagram.com/v19.0/me?fields=business_discovery.fields(id,username,name,biography,followers_count,media_count,profile_picture_url)&username=${cleanHandle}&access_token=${token}`,
+        {},
+        8000
+      );
+      if (bizRes.ok) {
+        const bizData = await bizRes.json() as any;
+        userData = bizData?.business_discovery ?? me;
+      }
+    }
+
+    return {
+      accountId,
+      platform: "Instagram",
+      handle: userData.username ?? cleanHandle,
+      displayName: userData.name ?? userData.username ?? cleanHandle,
+      profileUrl,
+      thumbnailUrl: userData.profile_picture_url ?? null,
+      followerCount: userData.followers_count ?? 0,
+      postCount: userData.media_count ?? 0,
+      description: userData.biography ?? null,
+      apiConnected: true,
+    };
+  } catch (err: any) {
+    console.error(`[socialEngine] resolveInstagramAccount failed:`, err.message);
+    return {
+      accountId,
+      platform: "Instagram",
+      handle: cleanHandle,
+      displayName: cleanHandle,
+      profileUrl,
+      thumbnailUrl: null,
+      followerCount: 0,
+      postCount: 0,
+      description: `Instagram API error: ${err.message}`,
+      apiConnected: false,
+    };
+  }
 }
 
 /**
- * Fetch recent Instagram posts for a public account.
- * Uses the public profile page to extract post shortcodes.
- * Returns up to `limit` posts with best-effort stats.
+ * Fetch recent Instagram posts using the Instagram Graph API.
+ * Returns empty array if INSTAGRAM_ACCESS_TOKEN is not set.
  */
 export async function fetchInstagramPosts(handle: string, limit = 12): Promise<SocialPostInfo[]> {
   const cleanHandle = handle.replace(/^@/, "");
   const accountId = `ig_${cleanHandle.toLowerCase()}`;
-  const posts: SocialPostInfo[] = [];
+  const token = ENV.instagramAccessToken;
+
+  if (!token) return [];
 
   try {
-    const profileUrl = `https://www.instagram.com/${cleanHandle}/`;
-    const res = await fetchWithTimeout(profileUrl);
-    const html = await res.text();
+    // Get media for the authenticated account (or use Business Discovery for others)
+    const res = await fetchWithTimeout(
+      `https://graph.instagram.com/v19.0/me/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=${limit}&access_token=${token}`,
+      {},
+      10000
+    );
 
-    // Extract shortcodes from the page source
-    const shortcodeMatches = Array.from(html.matchAll(/"shortcode":"([A-Za-z0-9_-]{10,12})"/g));
-    const seen = new Set<string>();
-    const shortcodes: string[] = [];
-    for (const m of shortcodeMatches) {
-      if (m[1] && !seen.has(m[1])) {
-        seen.add(m[1]);
-        shortcodes.push(m[1]);
-        if (shortcodes.length >= limit) break;
-      }
+    if (!res.ok) {
+      console.error(`[socialEngine] Instagram media fetch error: ${res.status}`);
+      return [];
     }
 
-    for (const shortcode of shortcodes) {
-      const postUrl = `https://www.instagram.com/p/${shortcode}/`;
-      const postId = `ig_${shortcode}`;
+    const data = await res.json() as any;
+    const posts: SocialPostInfo[] = [];
 
-      // Try to get like count from oEmbed
-      let likeCount = 0;
-      let commentCount = 0;
-      let title: string | null = null;
-      let thumbnailUrl: string | null = null;
-      let publishedDate: string | null = null;
-
-      try {
-        const oembedUrl = `https://www.instagram.com/api/oembed/?url=${encodeURIComponent(postUrl)}&omitscript=true`;
-        const oembedRes = await fetchWithTimeout(oembedUrl, 5000);
-        if (oembedRes.ok) {
-          const oembed = await oembedRes.json() as Record<string, unknown>;
-          title = (oembed.title as string) ?? null;
-          thumbnailUrl = (oembed.thumbnail_url as string) ?? null;
-        }
-      } catch {
-        // oEmbed failed, continue with defaults
-      }
+    for (const item of data?.data ?? []) {
+      const postId = `ig_${item.id}`;
+      const publishedDate = item.timestamp ? item.timestamp.slice(0, 10) : todayStr();
 
       posts.push({
         postId,
         accountId,
         platform: "Instagram",
-        postUrl,
-        title,
+        postUrl: item.permalink ?? `https://www.instagram.com/p/${item.id}/`,
+        title: item.caption?.slice(0, 280) ?? null,
         publishedDate,
-        thumbnailUrl,
+        thumbnailUrl: item.thumbnail_url ?? item.media_url ?? null,
         views: 0,
         impressions: 0,
-        likes: likeCount,
-        comments: commentCount,
+        likes: item.like_count ?? 0,
+        comments: item.comments_count ?? 0,
         shares: 0,
         retweets: 0,
       });
     }
-  } catch {
-    // Return whatever we have
-  }
 
-  return posts;
+    return posts;
+  } catch (err: any) {
+    console.error(`[socialEngine] fetchInstagramPosts failed:`, err.message);
+    return [];
+  }
 }
 
 // ─── X (Twitter) ─────────────────────────────────────────────────────────────
 
 /**
- * Resolve an X handle to account metadata using public oEmbed + profile page.
+ * Resolve an X handle to account metadata.
+ *
+ * Uses Twitter API v2 if TWITTER_BEARER_TOKEN is set.
+ * Returns a stub with apiConnected=false if no token is available.
+ *
+ * Twitter API v2 setup:
+ * 1. Create a developer account at https://developer.x.com
+ * 2. Create a project and app (free tier: 500K tweet reads/month)
+ * 3. Copy the Bearer Token from the app's "Keys and Tokens" page
+ * 4. Set TWITTER_BEARER_TOKEN environment variable
  */
 export async function resolveXAccount(handle: string): Promise<SocialAccountInfo> {
-  const cleanHandle = handle.replace(/^@/, "").replace(/https?:\/\/(www\.)?(twitter|x)\.com\//i, "").replace(/\/$/, "");
+  const cleanHandle = handle
+    .replace(/^@/, "")
+    .replace(/https?:\/\/(www\.)?(twitter|x)\.com\//i, "")
+    .replace(/\/$/, "");
   const profileUrl = `https://x.com/${cleanHandle}`;
   const accountId = `x_${cleanHandle.toLowerCase()}`;
+  const token = ENV.twitterBearerToken;
 
-  let displayName = cleanHandle;
-  let thumbnailUrl: string | null = null;
-  let followerCount = 0;
-  let postCount = 0;
-  let description: string | null = null;
-
-  try {
-    // Try fetching the public profile page
-    const res = await fetchWithTimeout(profileUrl);
-    const html = await res.text();
-
-    const ogTitle = html.match(/<meta property="og:title" content="([^"]+)"/)?.[1];
-    const ogDesc = html.match(/<meta property="og:description" content="([^"]+)"/)?.[1];
-    const ogImage = html.match(/<meta property="og:image" content="([^"]+)"/)?.[1];
-
-    if (ogTitle) displayName = ogTitle.replace(/\s*\(@[^)]+\).*$/, "").trim();
-    if (ogImage) thumbnailUrl = ogImage;
-    if (ogDesc) description = ogDesc;
-
-    // Try nitter.net as a fallback for follower counts (public mirror)
-    try {
-      const nitterRes = await fetchWithTimeout(`https://nitter.net/${cleanHandle}`, 6000);
-      const nitterHtml = await nitterRes.text();
-      const followerMatch = nitterHtml.match(/Followers<\/span>\s*<span[^>]*>([\d,]+)/i);
-      const tweetMatch = nitterHtml.match(/Tweets<\/span>\s*<span[^>]*>([\d,]+)/i);
-      if (followerMatch) followerCount = parseInt(followerMatch[1].replace(/,/g, ""), 10) || 0;
-      if (tweetMatch) postCount = parseInt(tweetMatch[1].replace(/,/g, ""), 10) || 0;
-    } catch {
-      // nitter unavailable, keep defaults
-    }
-  } catch {
-    // Silently fall back to defaults
+  if (!token) {
+    return {
+      accountId,
+      platform: "X",
+      handle: cleanHandle,
+      displayName: cleanHandle,
+      profileUrl,
+      thumbnailUrl: null,
+      followerCount: 0,
+      postCount: 0,
+      description: "Twitter/X API key not configured. Set TWITTER_BEARER_TOKEN to enable data fetching.",
+      apiConnected: false,
+    };
   }
 
-  return {
-    accountId,
-    platform: "X",
-    handle: cleanHandle,
-    displayName,
-    profileUrl,
-    thumbnailUrl,
-    followerCount,
-    postCount,
-    description,
-  };
+  try {
+    const res = await fetchWithTimeout(
+      `https://api.twitter.com/2/users/by/username/${cleanHandle}?user.fields=name,description,profile_image_url,public_metrics`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      8000
+    );
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[socialEngine] Twitter API v2 error: ${res.status} ${errText}`);
+      return {
+        accountId,
+        platform: "X",
+        handle: cleanHandle,
+        displayName: cleanHandle,
+        profileUrl,
+        thumbnailUrl: null,
+        followerCount: 0,
+        postCount: 0,
+        description: `Twitter API error: ${res.status}`,
+        apiConnected: false,
+      };
+    }
+
+    const data = await res.json() as any;
+    const user = data?.data ?? {};
+    const metrics = user?.public_metrics ?? {};
+
+    return {
+      accountId,
+      platform: "X",
+      handle: cleanHandle,
+      displayName: user.name ?? cleanHandle,
+      profileUrl,
+      thumbnailUrl: user.profile_image_url?.replace("_normal", "_400x400") ?? null,
+      followerCount: metrics.followers_count ?? 0,
+      postCount: metrics.tweet_count ?? 0,
+      description: user.description ?? null,
+      apiConnected: true,
+    };
+  } catch (err: any) {
+    console.error(`[socialEngine] resolveXAccount failed:`, err.message);
+    return {
+      accountId,
+      platform: "X",
+      handle: cleanHandle,
+      displayName: cleanHandle,
+      profileUrl,
+      thumbnailUrl: null,
+      followerCount: 0,
+      postCount: 0,
+      description: `Twitter API error: ${err.message}`,
+      apiConnected: false,
+    };
+  }
 }
 
 /**
- * Fetch recent X (Twitter) posts for a public account.
- * Uses nitter.net as a public scraping proxy.
+ * Fetch recent X (Twitter) posts using Twitter API v2.
+ * Returns empty array if TWITTER_BEARER_TOKEN is not set.
  */
 export async function fetchXPosts(handle: string, limit = 20): Promise<SocialPostInfo[]> {
   const cleanHandle = handle.replace(/^@/, "");
   const accountId = `x_${cleanHandle.toLowerCase()}`;
-  const posts: SocialPostInfo[] = [];
+  const token = ENV.twitterBearerToken;
+
+  if (!token) return [];
 
   try {
-    const nitterUrl = `https://nitter.net/${cleanHandle}`;
-    const res = await fetchWithTimeout(nitterUrl, 8000);
-    const html = await res.text();
+    // First get the user ID
+    const userRes = await fetchWithTimeout(
+      `https://api.twitter.com/2/users/by/username/${cleanHandle}?user.fields=id`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      8000
+    );
 
-    // Extract tweet IDs from nitter HTML
-    const tweetMatches = Array.from(html.matchAll(/href="\/[^/]+\/status\/(\d+)"/g));
-    const seen = new Set<string>();
-    const tweetIds: string[] = [];
-    for (const m of tweetMatches) {
-      if (m[1] && !seen.has(m[1])) {
-        seen.add(m[1]);
-        tweetIds.push(m[1]);
-        if (tweetIds.length >= limit) break;
+    if (!userRes.ok) {
+      console.error(`[socialEngine] Twitter user lookup failed: ${userRes.status}`);
+      return [];
+    }
+
+    const userData = await userRes.json() as any;
+    const userId = userData?.data?.id;
+    if (!userId) return [];
+
+    // Fetch recent tweets
+    const tweetsRes = await fetchWithTimeout(
+      `https://api.twitter.com/2/users/${userId}/tweets?max_results=${Math.min(limit, 100)}&tweet.fields=created_at,public_metrics,attachments&expansions=attachments.media_keys&media.fields=preview_image_url,url`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      10000
+    );
+
+    if (!tweetsRes.ok) {
+      console.error(`[socialEngine] Twitter tweets fetch failed: ${tweetsRes.status}`);
+      return [];
+    }
+
+    const tweetsData = await tweetsRes.json() as any;
+    const posts: SocialPostInfo[] = [];
+
+    // Build media map
+    const mediaMap = new Map<string, string>();
+    for (const media of tweetsData?.includes?.media ?? []) {
+      if (media.media_key) {
+        mediaMap.set(media.media_key, media.preview_image_url ?? media.url ?? "");
       }
     }
 
-    for (const tweetId of tweetIds) {
-      const postUrl = `https://x.com/${cleanHandle}/status/${tweetId}`;
-      const postId = `x_${tweetId}`;
+    for (const tweet of tweetsData?.data ?? []) {
+      const postId = `x_${tweet.id}`;
+      const metrics = tweet.public_metrics ?? {};
+      const publishedDate = tweet.created_at ? tweet.created_at.slice(0, 10) : todayStr();
 
-      let title: string | null = null;
-      let likeCount = 0;
-      let retweetCount = 0;
-      let replyCount = 0;
-      let publishedDate: string | null = null;
+      // Get thumbnail from first media attachment
       let thumbnailUrl: string | null = null;
-
-      // Try oEmbed for tweet content
-      try {
-        const oembedUrl = `https://publish.twitter.com/oembed?url=${encodeURIComponent(postUrl)}&omit_script=true`;
-        const oembedRes = await fetchWithTimeout(oembedUrl, 5000);
-        if (oembedRes.ok) {
-          const oembed = await oembedRes.json() as Record<string, unknown>;
-          // Extract text from html field
-          const htmlContent = oembed.html as string ?? "";
-          const textMatch = htmlContent.match(/<p[^>]*>([\s\S]*?)<\/p>/);
-          if (textMatch) title = textMatch[1].replace(/<[^>]+>/g, "").trim().slice(0, 280);
-        }
-      } catch {
-        // oEmbed failed
+      const mediaKeys: string[] = tweet.attachments?.media_keys ?? [];
+      if (mediaKeys.length > 0 && mediaMap.has(mediaKeys[0]!)) {
+        thumbnailUrl = mediaMap.get(mediaKeys[0]!) ?? null;
       }
 
       posts.push({
         postId,
         accountId,
         platform: "X",
-        postUrl,
-        title,
+        postUrl: `https://x.com/${cleanHandle}/status/${tweet.id}`,
+        title: tweet.text?.slice(0, 280) ?? null,
         publishedDate,
         thumbnailUrl,
-        views: 0,
-        impressions: 0,
-        likes: likeCount,
-        comments: replyCount,
-        shares: 0,
-        retweets: retweetCount,
+        views: metrics.impression_count ?? 0,
+        impressions: metrics.impression_count ?? 0,
+        likes: metrics.like_count ?? 0,
+        comments: metrics.reply_count ?? 0,
+        shares: metrics.quote_count ?? 0,
+        retweets: metrics.retweet_count ?? 0,
       });
     }
-  } catch {
-    // Return whatever we have
-  }
 
-  return posts;
+    return posts;
+  } catch (err: any) {
+    console.error(`[socialEngine] fetchXPosts failed:`, err.message);
+    return [];
+  }
 }
 
 /**
