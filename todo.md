@@ -151,3 +151,6 @@
 - [x] Channels.tsx: call markSeen on mount to clear the badge
 - [x] channelEngine: set is_seen = false when inserting newly discovered videos
 - [x] Test: unseenCount returns correct count, markSeen resets to 0
+
+## v1.5 — Bug Fix: YouTube @handle Channel Resolution
+- [x] Fix resolveChannel() in channelEngine.ts: remove query.replace(/^@/, "") so @handle searches keep the @ prefix and return correct Channel results from youtubei.js search

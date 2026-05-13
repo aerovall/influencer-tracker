@@ -198,8 +198,11 @@ export async function resolveChannel(input: string): Promise<ChannelInfo> {
   if (isBareId) {
     channel = await yt.getChannel(query);
   } else {
-    // Search for the channel by handle/name
-    const searchResults = await yt.search(query.replace(/^@/, ""), { type: "channel" });
+    // Search for the channel by handle/name.
+    // Keep the @ prefix when present — searching "@handle" returns exact handle
+    // matches (type: Channel with first.id populated), whereas stripping @ can
+    // return wrong or no results for handle-based queries.
+    const searchResults = await yt.search(query, { type: "channel" });
     const first = (searchResults as any)?.results?.[0] ?? (searchResults as any)?.channels?.[0];
     if (!first) throw new Error(`No channel found for: ${input}`);
     const cid = first?.id ?? first?.channel_id ?? first?.endpoint?.payload?.browseId;
