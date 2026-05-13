@@ -1,0 +1,401 @@
+/**
+ * Sync Engine
+ * Orchestrates daily video discovery, view count snapshots, alert evaluation, and report generation.
+ * Called by the cron scheduler and the manual "sync now" admin action.
+ */
+
+import { nanoid } from "nanoid";
+import {
+  getAllAlertThresholds,
+  getAllInfluencers,
+  getAllPlatformAccounts,
+  getAllVideos,
+  getAvgEngagementRate,
+  getLatestViewCountByVideoId,
+  getRecentSyncLogs,
+  getUnreadAlertCount,
+  getVideoStats,
+  getViewCountTrends,
+  insertAlertEvent,
+  insertReport,
+  insertSyncLog,
+  insertVideo,
+  insertViewCount,
+  updatePlatformAccountSyncTime,
+  updateReportSchedule,
+  updateSyncLog,
+} from "./db";
+import { notifyOwner } from "./_core/notification";
+import {
+  fetchInstagramUserMedia,
+  fetchInstagramVideoMetrics,
+  fetchTikTokUserVideos,
+  fetchTikTokVideoMetrics,
+  fetchYouTubeChannelVideos,
+  fetchYouTubeVideoMetrics,
+} from "./platformApi";
+
+function todayStr() {
+  return new Date().toISOString().split("T")[0]!;
+}
+
+// ─── Video Discovery ──────────────────────────────────────────────────────────
+
+export async function runVideoDiscovery(): Promise<{ processed: number; errors: string[] }> {
+  const accounts = await getAllPlatformAccounts();
+  const allInfluencers = await getAllInfluencers();
+  // Build a lookup map: influencerId -> influencer name (must be Levi, NoBs, or Danielle)
+  const influencerNameMap = new Map<number, string>();
+  for (const inf of allInfluencers) {
+    influencerNameMap.set(inf.id, inf.name);
+  }
+  let processed = 0;
+  const errors: string[] = [];
+
+  for (const account of accounts) {
+    if (!account.isActive) continue;
+
+    const logResult = await insertSyncLog({
+      jobType: "video_discovery",
+      status: "running",
+      influencerName: undefined,
+      platform: account.platform,
+      recordsProcessed: 0,
+    });
+    const logId = (logResult as unknown as { insertId: number }).insertId;
+
+    try {
+      let newVideos: Awaited<ReturnType<typeof fetchYouTubeChannelVideos>> = [];
+
+      if (account.platform === "YouTube" && account.channelId) {
+        newVideos = await fetchYouTubeChannelVideos(account.channelId);
+      } else if (account.platform === "Instagram" && account.channelId) {
+        newVideos = await fetchInstagramUserMedia(account.channelId);
+      } else if (account.platform === "TikTok" && account.username) {
+        newVideos = await fetchTikTokUserVideos(account.username);
+      }
+
+      // Resolve the influencer name from the DB — must be exactly Levi, NoBs, or Danielle
+      const resolvedInfluencerName = influencerNameMap.get(account.influencerId) ?? null;
+      if (!resolvedInfluencerName) {
+        errors.push(`[${account.platform}] Cannot resolve influencer name for account id=${account.id}`);
+        continue;
+      }
+      for (const video of newVideos) {
+        await insertVideo({
+          videoId: video.videoId,
+          influencerName: resolvedInfluencerName,
+          platform: account.platform,
+          videoUrl: video.videoUrl,
+          title: video.title,
+          publishedDate: video.publishedDate,
+          dateAdded: todayStr(),
+          thumbnailUrl: video.thumbnailUrl,
+          durationSeconds: video.durationSeconds,
+        });
+        processed++;
+      }
+
+      await updatePlatformAccountSyncTime(account.id);
+      await updateSyncLog(logId, {
+        status: "success",
+        recordsProcessed: newVideos.length,
+        completedAt: new Date(),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`[${account.platform}] ${msg}`);
+      await updateSyncLog(logId, {
+        status: "failed",
+        errorMessage: msg,
+        completedAt: new Date(),
+      });
+    }
+  }
+
+  return { processed, errors };
+}
+
+// ─── View Count Snapshot ──────────────────────────────────────────────────────
+
+export async function runViewCountSnapshot(): Promise<{ appended: number; skipped: number; errors: string[] }> {
+  const today = todayStr();
+  const allVideos = await getAllVideos();
+  let appended = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  // Group videos by platform for batch API calls
+  const ytVideos = allVideos.filter((v) => v.platform === "YouTube");
+  const igVideos = allVideos.filter((v) => v.platform === "Instagram");
+  const ttVideos = allVideos.filter((v) => v.platform === "TikTok");
+
+  const metricsMap = new Map<string, Awaited<ReturnType<typeof fetchYouTubeVideoMetrics>>[number]>();
+
+  // YouTube batch
+  if (ytVideos.length > 0) {
+    try {
+      const metrics = await fetchYouTubeVideoMetrics(ytVideos.map((v) => v.videoId));
+      for (const m of metrics) metricsMap.set(m.videoId, m);
+    } catch (err) {
+      errors.push(`YouTube metrics: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // Instagram per-account
+  const igAccountIds = Array.from(new Set(igVideos.map((v) => v.videoId.split("_")[1])));
+  if (igVideos.length > 0) {
+    try {
+      // Instagram requires per-media metrics
+      const metrics = await fetchInstagramVideoMetrics("", igVideos.map((v) => v.videoId));
+      for (const m of metrics) metricsMap.set(m.videoId, m);
+    } catch (err) {
+      errors.push(`Instagram metrics: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // TikTok batch
+  if (ttVideos.length > 0) {
+    try {
+      const metrics = await fetchTikTokVideoMetrics(ttVideos.map((v) => v.videoId));
+      for (const m of metrics) metricsMap.set(m.videoId, m);
+    } catch (err) {
+      errors.push(`TikTok metrics: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // Insert view count rows (append-only, never overwrite)
+  for (const video of allVideos) {
+    const m = metricsMap.get(video.videoId);
+    if (!m) {
+      // No metrics available — use last known count if exists
+      const last = await getLatestViewCountByVideoId(video.videoId);
+      if (last) {
+        const inserted = await insertViewCount({
+          countId: `cnt_${nanoid(10)}`,
+          videoId: video.videoId,
+          date: today,
+          viewCount: last.viewCount,
+          likes: last.likes ?? 0,
+          comments: last.comments ?? 0,
+          shares: last.shares ?? 0,
+          engagementRate: last.engagementRate ?? "0",
+        });
+        if (inserted) appended++;
+        else skipped++;
+      }
+      continue;
+    }
+
+    const inserted = await insertViewCount({
+      countId: `cnt_${nanoid(10)}`,
+      videoId: video.videoId,
+      date: today,
+      viewCount: m.viewCount,
+      likes: m.likes,
+      comments: m.comments,
+      shares: m.shares,
+      engagementRate: String(m.engagementRate),
+    });
+
+    if (inserted) appended++;
+    else skipped++;
+  }
+
+  return { appended, skipped, errors };
+}
+
+// ─── Alert Evaluation ─────────────────────────────────────────────────────────
+
+export async function runAlertEvaluation(): Promise<number> {
+  const thresholds = await getAllAlertThresholds();
+  const activeThresholds = thresholds.filter((t) => t.isActive);
+  const trends = await getViewCountTrends(2); // last 2 days for growth rate
+  let alertsFired = 0;
+
+  // Build per-video latest metrics
+  const videoMetrics = new Map<
+    string,
+    { viewCount: number; engagementRate: number; growthRate: number; likes: number; comments: number; shares: number }
+  >();
+
+  // Group by videoId, sorted by date
+  const byVideo = new Map<string, typeof trends>();
+  for (const row of trends) {
+    if (!byVideo.has(row.videoId)) byVideo.set(row.videoId, []);
+    byVideo.get(row.videoId)!.push(row);
+  }
+
+  for (const [videoId, rows] of Array.from(byVideo.entries())) {
+    const sorted = rows.sort((a: { date: string }, b: { date: string }) => a.date.localeCompare(b.date));
+    const latest = sorted[sorted.length - 1];
+    const prev = sorted[sorted.length - 2];
+    if (!latest) continue;
+
+    const latestViews = Number(latest.viewCount);
+    const prevViews = prev ? Number(prev.viewCount) : latestViews;
+    const growthRate = prevViews > 0 ? ((latestViews - prevViews) / prevViews) * 100 : 0;
+
+    videoMetrics.set(videoId, {
+      viewCount: latestViews,
+      engagementRate: parseFloat(String(latest.engagementRate ?? 0)),
+      growthRate: parseFloat(growthRate.toFixed(4)),
+      likes: Number(latest.likes ?? 0),
+      comments: Number(latest.comments ?? 0),
+      shares: 0,
+    });
+  }
+
+  for (const threshold of activeThresholds) {
+    for (const [videoId, metrics] of Array.from(videoMetrics.entries())) {
+      // Filter by influencer/platform if scoped
+      const videoRow = trends.find((t) => t.videoId === videoId);
+      if (threshold.influencerName && videoRow?.influencerName !== threshold.influencerName) continue;
+      if (threshold.platform && videoRow?.platform !== threshold.platform) continue;
+
+      const value = metrics[threshold.metric as keyof typeof metrics] as number;
+      const thresh = parseFloat(String(threshold.thresholdValue));
+
+      let triggered = false;
+      if (threshold.operator === "gt" && value > thresh) triggered = true;
+      if (threshold.operator === "gte" && value >= thresh) triggered = true;
+      if (threshold.operator === "lt" && value < thresh) triggered = true;
+      if (threshold.operator === "lte" && value <= thresh) triggered = true;
+
+      if (triggered) {
+        const metricLabel = threshold.metric.replace(/_/g, " ");
+        const message = `[${threshold.alertType.toUpperCase()}] "${videoRow?.title ?? videoId}" — ${metricLabel} is ${value.toFixed(2)} (threshold: ${threshold.operator} ${thresh})`;
+
+        await insertAlertEvent({
+          thresholdId: threshold.id,
+          videoId,
+          triggeredValue: String(value),
+          message,
+        });
+
+        await notifyOwner({ title: `Alert: ${threshold.name}`, content: message });
+        alertsFired++;
+      }
+    }
+  }
+
+  return alertsFired;
+}
+
+// ─── Report Generation ────────────────────────────────────────────────────────
+
+export async function generateDailyReport(): Promise<void> {
+  const today = todayStr();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split("T")[0]!;
+
+  const stats = await getVideoStats();
+  const avgEng = await getAvgEngagementRate();
+  const alertCount = await getUnreadAlertCount();
+  const trends = await getViewCountTrends(1);
+
+  const totalViewsToday = trends.reduce((sum, t) => sum + Number(t.viewCount), 0);
+  const topVideos = trends
+    .sort((a, b) => Number(b.viewCount) - Number(a.viewCount))
+    .slice(0, 5)
+    .map((v) => `• ${v.title} (${v.influencerName} / ${v.platform}): ${Number(v.viewCount).toLocaleString()} views`)
+    .join("\n");
+
+  const content = `## Daily Report — ${today}
+
+**Period:** ${yesterdayStr} → ${today}
+**Total Active Videos:** ${stats.total}
+**Total Views Tracked Today:** ${totalViewsToday.toLocaleString()}
+**Average Engagement Rate:** ${Number(avgEng).toFixed(2)}%
+**Unread Alerts:** ${alertCount}
+
+### Top 5 Videos by Views
+${topVideos || "No view data available for today."}
+
+### Videos by Influencer
+${stats.byInfluencer.map((r) => `• ${r.influencerName}: ${r.count} videos`).join("\n")}
+
+### Videos by Platform
+${stats.byPlatform.map((r) => `• ${r.platform}: ${r.count} videos`).join("\n")}`;
+
+  await insertReport({
+    type: "daily",
+    title: `Daily Report — ${today}`,
+    content,
+    periodStart: yesterdayStr,
+    periodEnd: today,
+    totalVideos: stats.total,
+    totalViews: totalViewsToday,
+    avgEngagementRate: String(Number(avgEng).toFixed(4)),
+    alertsTriggered: alertCount,
+  });
+
+  await updateReportSchedule("daily", { lastRunAt: new Date() });
+  await notifyOwner({ title: `Daily Report Ready — ${today}`, content: `Your daily influencer tracking report is ready. ${stats.total} videos tracked, ${totalViewsToday.toLocaleString()} total views today, ${alertCount} unread alerts.` });
+}
+
+export async function generateWeeklyReport(): Promise<void> {
+  const today = todayStr();
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const weekAgoStr = weekAgo.toISOString().split("T")[0]!;
+
+  const stats = await getVideoStats();
+  const avgEng = await getAvgEngagementRate();
+  const trends = await getViewCountTrends(7);
+  const alertCount = await getUnreadAlertCount();
+
+  const totalViewsWeek = trends.reduce((sum, t) => sum + Number(t.viewCount), 0);
+  const topVideos = trends
+    .sort((a, b) => Number(b.viewCount) - Number(a.viewCount))
+    .slice(0, 10)
+    .map((v) => `• ${v.title} (${v.influencerName} / ${v.platform}): ${Number(v.viewCount).toLocaleString()} views`)
+    .join("\n");
+
+  const content = `## Weekly Report — ${weekAgoStr} to ${today}
+
+**Period:** ${weekAgoStr} → ${today}
+**Total Active Videos:** ${stats.total}
+**Total Views This Week:** ${totalViewsWeek.toLocaleString()}
+**Average Engagement Rate:** ${Number(avgEng).toFixed(2)}%
+**Alerts Triggered This Week:** ${alertCount}
+
+### Top 10 Videos This Week
+${topVideos || "No view data available for this week."}
+
+### Videos by Influencer
+${stats.byInfluencer.map((r) => `• ${r.influencerName}: ${r.count} videos`).join("\n")}
+
+### Videos by Platform
+${stats.byPlatform.map((r) => `• ${r.platform}: ${r.count} videos`).join("\n")}`;
+
+  await insertReport({
+    type: "weekly",
+    title: `Weekly Report — ${weekAgoStr} to ${today}`,
+    content,
+    periodStart: weekAgoStr,
+    periodEnd: today,
+    totalVideos: stats.total,
+    totalViews: totalViewsWeek,
+    avgEngagementRate: String(Number(avgEng).toFixed(4)),
+    alertsTriggered: alertCount,
+  });
+
+  await updateReportSchedule("weekly", { lastRunAt: new Date() });
+  await notifyOwner({ title: `Weekly Report Ready — ${today}`, content: `Your weekly influencer tracking report is ready. ${stats.total} videos tracked, ${totalViewsWeek.toLocaleString()} total views this week.` });
+}
+
+// ─── Full Daily Job ───────────────────────────────────────────────────────────
+
+export async function runFullDailySync(): Promise<{
+  discovery: Awaited<ReturnType<typeof runVideoDiscovery>>;
+  snapshot: Awaited<ReturnType<typeof runViewCountSnapshot>>;
+  alerts: number;
+}> {
+  const discovery = await runVideoDiscovery();
+  const snapshot = await runViewCountSnapshot();
+  const alerts = await runAlertEvaluation();
+  await generateDailyReport();
+  return { discovery, snapshot, alerts };
+}
