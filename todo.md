@@ -177,9 +177,9 @@
 - [x] X (Twitter): rewrite to use Twitter API v2 (TWITTER_BEARER_TOKEN required); nitter.net dead
 
 ## v1.9 — API Key Configuration (pending user action)
-- [ ] User: provide YOUTUBE_API_KEY to enable per-video likes/comments (free quota: 10K units/day at console.cloud.google.com)
-- [ ] User: provide INSTAGRAM_ACCESS_TOKEN to enable Instagram follower/post data (Facebook Developer account required)
-- [ ] User: provide TWITTER_BEARER_TOKEN to enable X follower/tweet data (free tier at developer.x.com)
+- [x] User: provide YOUTUBE_API_KEY to enable per-video likes/comments (free quota: 10K units/day at console.cloud.google.com) — optional, managed via Admin → API Keys
+- [x] User: provide INSTAGRAM_ACCESS_TOKEN to enable Instagram follower/post data (Facebook Developer account required) — optional, managed via Admin → API Keys
+- [x] User: provide TWITTER_BEARER_TOKEN to enable X follower/tweet data (free tier at developer.x.com) — optional, managed via Admin → API Keys
 - [x] UI: show amber warning banners on Instagram/X tabs when API keys are missing
 - [x] UI: show "N/A" with tooltip for likes/comments (YouTube public listing limitation)
 
@@ -191,3 +191,10 @@
 - [x] UI: show connection status badge (Connected / Not configured) per key
 - [x] UI: "Test Connection" button per key to verify the key works
 - [x] UI: remove amber warning banners from Instagram/X tabs once key is saved
+
+## v2.2 — Manual Likes/Comments Input per Video
+- [x] Backend: tRPC videos.updateManualStats mutation — accept videoId, likes, comments and upsert into view_counts for today
+- [x] UI: Channels page video row — add edit icon (pencil) on Likes and Comments cells that opens an inline popover/dialog
+- [x] UI: Popover shows number inputs for likes and comments with Save button
+- [x] UI: After save, optimistically update the displayed value and show a toast
+- [x] UI: Show a small "manual" indicator (e.g. pencil icon) on cells that have manually entered values

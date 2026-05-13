@@ -109,6 +109,8 @@ export const viewCounts = mysqlTable("view_counts", {
   comments: bigint("comments", { mode: "number" }).default(0),
   shares: bigint("shares", { mode: "number" }).default(0),
   engagementRate: decimal("engagement_rate", { precision: 8, scale: 4 }).default("0"),
+  manualLikes: bigint("manual_likes", { mode: "number" }),
+  manualComments: bigint("manual_comments", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

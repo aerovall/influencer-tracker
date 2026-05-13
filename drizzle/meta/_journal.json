@@ -43,6 +43,13 @@
       "when": 1778691815740,
       "tag": "0005_puzzling_harrier",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1778711625195,
+      "tag": "0006_youthful_vapor",
+      "breakpoints": true
     }
   ]
 }

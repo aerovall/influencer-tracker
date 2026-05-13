@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `view_counts` ADD `manual_likes` bigint DEFAULT null;\nALTER TABLE `view_counts` ADD `manual_comments` bigint DEFAULT null;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute ALTER TABLE `view_counts` ADD `manual_likes` bigint DEFAULT null;\nALTER TABLE `view_counts` ADD `manual_comments` bigint DEFAULT null;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2399
+}

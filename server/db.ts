@@ -256,6 +256,8 @@ export async function insertViewCount(data: InsertViewCount) {
         comments: data.comments,
         shares: data.shares,
         engagementRate: data.engagementRate,
+        ...(data.manualLikes !== undefined ? { manualLikes: data.manualLikes } : {}),
+        ...(data.manualComments !== undefined ? { manualComments: data.manualComments } : {}),
       },
     });
   return true;

@@ -143,6 +143,103 @@ function AddShillForm({ videoId, onAdded }: { videoId: string; onAdded: () => vo
   );
 }
 
+// ─── Manual Stat Cell ────────────────────────────────────────────────────────
+function ManualStatCell({
+  videoId, field, manualValue, autoValue, icon
+}: {
+  videoId: string;
+  field: "likes" | "comments";
+  manualValue: number | null | undefined;  // from manualLikes/manualComments column
+  autoValue: number | null | undefined;    // from likes/comments column (auto-fetched)
+  icon: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [inputVal, setInputVal] = useState("");
+  const [optimisticVal, setOptimisticVal] = useState<number | null>(null);
+  const utils = trpc.useUtils();
+
+  // Display priority: optimistic > manual > auto
+  const displayValue = optimisticVal !== null ? optimisticVal : (manualValue != null && manualValue > 0 ? manualValue : autoValue);
+  const isManual = optimisticVal !== null || (manualValue != null && manualValue > 0);
+  const hasValue = displayValue != null && displayValue > 0;
+
+  const updateStats = trpc.videos.updateManualStats.useMutation({
+    onMutate: ({ likes, comments }) => {
+      const val = field === "likes" ? likes : comments;
+      if (val !== null) setOptimisticVal(val);
+    },
+    onSuccess: () => {
+      toast.success(`${field === "likes" ? "Likes" : "Comments"} saved`);
+      utils.videos.getViewCounts.invalidate({ videoId });
+      setOpen(false);
+    },
+    onError: (e) => {
+      toast.error(e.message);
+      setOptimisticVal(null); // rollback
+    },
+    onSettled: () => setOptimisticVal(null),
+  });
+
+  const handleSave = () => {
+    const parsed = parseInt(inputVal.replace(/[^0-9]/g, ""), 10);
+    if (isNaN(parsed) || parsed < 0) { toast.error("Enter a valid number"); return; }
+    updateStats.mutate({
+      videoId,
+      likes: field === "likes" ? parsed : null,
+      comments: field === "comments" ? parsed : null,
+    });
+  };
+
+  return (
+    <div className="flex items-center gap-1 text-sm group">
+      {icon}
+      <span className={hasValue ? "" : "text-muted-foreground/60"}>
+        {hasValue ? formatNum(displayValue) : "—"}
+      </span>
+      {isManual && !open && (
+        <span title="Manually entered" className="text-amber-400/60 shrink-0">
+          <Pencil className="h-2.5 w-2.5" />
+        </span>
+      )}
+      {open ? (
+        <div className="flex items-center gap-1 ml-1" onClick={(e) => e.stopPropagation()}>
+          <Input
+            autoFocus
+            type="number"
+            min={0}
+            placeholder="0"
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setOpen(false); }}
+            className="h-6 w-20 text-xs px-1.5 py-0"
+          />
+          <button
+            onClick={(e) => { e.stopPropagation(); handleSave(); }}
+            disabled={updateStats.isPending}
+            className="text-green-400 hover:text-green-300 disabled:opacity-40"
+          >
+            <Check className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={(e) => { e.stopPropagation(); setInputVal(hasValue ? String(displayValue) : ""); setOpen(true); }}
+          className="opacity-0 group-hover:opacity-100 transition-opacity ml-0.5 text-muted-foreground hover:text-amber-400"
+          title={`Manually enter ${field} count`}
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Video Row ────────────────────────────────────────────────────────────────
 function VideoRow({ video }: { video: any }) {
   const [expanded, setExpanded] = useState(false);
@@ -195,16 +292,22 @@ function VideoRow({ video }: { video: any }) {
           </div>
         </td>
         <td className="px-4 py-3">
-          <div className="flex items-center gap-1 text-sm" title="Like counts are not available from YouTube's public channel listing">
-            <ThumbsUp className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-muted-foreground/60">{formatUnavailableStat(latestStats?.likes)}</span>
-          </div>
+          <ManualStatCell
+            videoId={video.videoId}
+            field="likes"
+            manualValue={latestStats?.manualLikes}
+            autoValue={latestStats?.likes}
+            icon={<ThumbsUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+          />
         </td>
         <td className="px-4 py-3">
-          <div className="flex items-center gap-1 text-sm" title="Comment counts are not available from YouTube's public channel listing">
-            <MessageCircle className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="text-muted-foreground/60">{formatUnavailableStat(latestStats?.comments)}</span>
-          </div>
+          <ManualStatCell
+            videoId={video.videoId}
+            field="comments"
+            manualValue={latestStats?.manualComments}
+            autoValue={latestStats?.comments}
+            icon={<MessageCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+          />
         </td>
         <td className="px-4 py-3 text-sm text-muted-foreground">
           <div className="flex items-center gap-1">

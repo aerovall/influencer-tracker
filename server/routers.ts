@@ -219,6 +219,51 @@ const videosRouter = router({
     .query(({ input }) => getViewCountsByVideoId(input.videoId)),
 
   stats: protectedProcedure.query(() => getVideoStats()),
+
+  updateManualStats: protectedProcedure
+    .input(z.object({
+      videoId: z.string(),
+      likes: z.number().int().min(0).nullable(),
+      comments: z.number().int().min(0).nullable(),
+    }))
+    .mutation(async ({ input }) => {
+      const existing = await getViewCountsByVideoId(input.videoId);
+      const today = todayStr();
+      // Find today's row if it exists
+      const todayRow = existing.find((r) => r.date === today);
+      const latestRow = existing.length > 0 ? existing[existing.length - 1] : null;
+
+      if (todayRow) {
+        // Update today's row — preserve auto-fetched viewCount, update manual fields
+        await insertViewCount({
+          countId: todayRow.countId,
+          videoId: input.videoId,
+          date: today,
+          viewCount: todayRow.viewCount,
+          likes: todayRow.likes ?? 0,
+          comments: todayRow.comments ?? 0,
+          shares: todayRow.shares ?? 0,
+          engagementRate: todayRow.engagementRate ?? "0",
+          manualLikes: input.likes !== null ? input.likes : todayRow.manualLikes,
+          manualComments: input.comments !== null ? input.comments : todayRow.manualComments,
+        });
+      } else {
+        // No row for today — create one, copying viewCount from latest if available
+        await insertViewCount({
+          countId: `manual_${input.videoId}_${today}`,
+          videoId: input.videoId,
+          date: today,
+          viewCount: latestRow?.viewCount ?? 0,
+          likes: latestRow?.likes ?? 0,
+          comments: latestRow?.comments ?? 0,
+          shares: 0,
+          engagementRate: "0",
+          manualLikes: input.likes !== null ? input.likes : undefined,
+          manualComments: input.comments !== null ? input.comments : undefined,
+        });
+      }
+      return { success: true };
+    }),
 });
 
 // ─── Analytics Router ─────────────────────────────────────────────────────────
