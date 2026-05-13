@@ -15,6 +15,21 @@
  */
 
 import { ENV } from "./_core/env.js";
+import { getCredentialByKey } from "./db.js";
+
+/** Resolve Instagram token: env var first, then DB credential */
+async function getInstagramToken(): Promise<string | null> {
+  if (ENV.instagramAccessToken) return ENV.instagramAccessToken;
+  const cred = await getCredentialByKey("instagram_access_token");
+  return cred?.credentialValue ?? null;
+}
+
+/** Resolve Twitter Bearer token: env var first, then DB credential */
+async function getTwitterToken(): Promise<string | null> {
+  if (ENV.twitterBearerToken) return ENV.twitterBearerToken;
+  const cred = await getCredentialByKey("twitter_bearer_token");
+  return cred?.credentialValue ?? null;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,7 +108,7 @@ export async function resolveInstagramAccount(handle: string): Promise<SocialAcc
     .replace(/\/$/, "");
   const profileUrl = `https://www.instagram.com/${cleanHandle}/`;
   const accountId = `ig_${cleanHandle.toLowerCase()}`;
-  const token = ENV.instagramAccessToken;
+  const token = await getInstagramToken();
 
   if (!token) {
     return {
@@ -105,7 +120,7 @@ export async function resolveInstagramAccount(handle: string): Promise<SocialAcc
       thumbnailUrl: null,
       followerCount: 0,
       postCount: 0,
-      description: "Instagram API key not configured. Set INSTAGRAM_ACCESS_TOKEN to enable data fetching.",
+      description: "Instagram API key not configured. Add it in Admin → API Keys to enable data fetching.",
       apiConnected: false,
     };
   }
@@ -196,7 +211,7 @@ export async function resolveInstagramAccount(handle: string): Promise<SocialAcc
 export async function fetchInstagramPosts(handle: string, limit = 12): Promise<SocialPostInfo[]> {
   const cleanHandle = handle.replace(/^@/, "");
   const accountId = `ig_${cleanHandle.toLowerCase()}`;
-  const token = ENV.instagramAccessToken;
+  const token = await getInstagramToken();
 
   if (!token) return [];
 
@@ -265,7 +280,7 @@ export async function resolveXAccount(handle: string): Promise<SocialAccountInfo
     .replace(/\/$/, "");
   const profileUrl = `https://x.com/${cleanHandle}`;
   const accountId = `x_${cleanHandle.toLowerCase()}`;
-  const token = ENV.twitterBearerToken;
+  const token = await getTwitterToken();
 
   if (!token) {
     return {
@@ -277,7 +292,7 @@ export async function resolveXAccount(handle: string): Promise<SocialAccountInfo
       thumbnailUrl: null,
       followerCount: 0,
       postCount: 0,
-      description: "Twitter/X API key not configured. Set TWITTER_BEARER_TOKEN to enable data fetching.",
+      description: "Twitter/X API key not configured. Add it in Admin → API Keys to enable data fetching.",
       apiConnected: false,
     };
   }
@@ -346,7 +361,7 @@ export async function resolveXAccount(handle: string): Promise<SocialAccountInfo
 export async function fetchXPosts(handle: string, limit = 20): Promise<SocialPostInfo[]> {
   const cleanHandle = handle.replace(/^@/, "");
   const accountId = `x_${cleanHandle.toLowerCase()}`;
-  const token = ENV.twitterBearerToken;
+  const token = await getTwitterToken();
 
   if (!token) return [];
 

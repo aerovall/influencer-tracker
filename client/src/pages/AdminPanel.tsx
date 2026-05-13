@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfluencerBadge, PlatformBadge } from "@/components/Badges";
-import { Plus, Trash2, RefreshCw, Key, Bell, Users, Activity, Download, CheckCircle2, Youtube } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Key, Bell, Users, Activity, Download, CheckCircle2, Youtube, Twitter, Instagram, CheckCircle, XCircle, Loader2, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -514,6 +514,203 @@ function ExcelExportSection() {
   );
 }
 
+// ─── API Keys Section ────────────────────────────────────────────────────────
+const API_KEY_CONFIGS = [
+  {
+    service: "youtube" as const,
+    label: "YouTube Data API v3",
+    description: "Enables per-video like counts and comment counts. Free quota: 10,000 units/day.",
+    placeholder: "AIza...",
+    helpUrl: "https://console.cloud.google.com/apis/library/youtube.googleapis.com",
+    helpText: "Get key at Google Cloud Console",
+    icon: Youtube,
+    iconColor: "text-red-400",
+  },
+  {
+    service: "instagram" as const,
+    label: "Instagram Graph API",
+    description: "Enables Instagram follower counts, post reach, and engagement data.",
+    placeholder: "IGQV...",
+    helpUrl: "https://developers.facebook.com/docs/instagram-api",
+    helpText: "Get token at Facebook Developer Portal",
+    icon: Instagram,
+    iconColor: "text-pink-400",
+  },
+  {
+    service: "twitter" as const,
+    label: "Twitter / X API v2",
+    description: "Enables X follower counts, tweet impressions, and engagement data.",
+    placeholder: "AAAA...",
+    helpUrl: "https://developer.x.com/en/portal/dashboard",
+    helpText: "Get Bearer Token at X Developer Portal",
+    icon: Twitter,
+    iconColor: "text-sky-400",
+  },
+] as const;
+
+function ApiKeyCard({ config, status, onRefresh }: {
+  config: typeof API_KEY_CONFIGS[number];
+  status?: { configured: boolean; source: string };
+  onRefresh: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [showValue, setShowValue] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const save = trpc.admin.saveApiKey.useMutation({
+    onSuccess: () => { toast.success(`${config.label} key saved`); setValue(""); setTestResult(null); onRefresh(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const remove = trpc.admin.removeApiKey.useMutation({
+    onSuccess: () => { toast.success(`${config.label} key removed`); setTestResult(null); onRefresh(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const test = trpc.admin.testApiKey.useMutation({
+    onSuccess: (data) => setTestResult(data),
+    onError: (e) => setTestResult({ success: false, message: e.message }),
+  });
+
+  const Icon = config.icon;
+  const isConfigured = status?.configured ?? false;
+
+  return (
+    <div className="border border-border/50 rounded-xl bg-card/60 p-5 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className={`p-2 rounded-lg bg-muted/20 ${config.iconColor}`}>
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="font-semibold text-sm">{config.label}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{config.description}</p>
+          </div>
+        </div>
+        <div className="shrink-0">
+          {isConfigured ? (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-400 bg-green-500/10 border border-green-500/20 rounded-full px-2.5 py-1">
+              <CheckCircle className="h-3 w-3" /> Connected
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted/20 border border-border/40 rounded-full px-2.5 py-1">
+              <XCircle className="h-3 w-3" /> Not configured
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Input row */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Input
+            type={showValue ? "text" : "password"}
+            placeholder={isConfigured ? "Enter new key to replace..." : config.placeholder}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="pr-9 font-mono text-xs"
+          />
+          <button
+            type="button"
+            onClick={() => setShowValue((v) => !v)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        <Button
+          size="sm"
+          disabled={!value.trim() || save.isPending}
+          onClick={() => save.mutate({ service: config.service, value: value.trim() })}
+        >
+          {save.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+        </Button>
+      </div>
+
+      {/* Actions row */}
+      <div className="flex items-center gap-2">
+        {isConfigured && (
+          <>
+            <Button
+              size="sm" variant="outline"
+              disabled={test.isPending}
+              onClick={() => test.mutate({ service: config.service })}
+              className="text-xs gap-1.5"
+            >
+              {test.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+              Test Connection
+            </Button>
+            <Button
+              size="sm" variant="outline"
+              disabled={remove.isPending}
+              onClick={() => remove.mutate({ service: config.service })}
+              className="text-xs gap-1.5 text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/5"
+            >
+              {remove.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              Remove
+            </Button>
+          </>
+        )}
+        <a
+          href={config.helpUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2 ml-auto"
+        >
+          {config.helpText} ↗
+        </a>
+      </div>
+
+      {/* Test result */}
+      {testResult && (
+        <div className={`text-xs rounded-lg px-3 py-2 flex items-center gap-2 ${
+          testResult.success
+            ? "bg-green-500/10 border border-green-500/20 text-green-400"
+            : "bg-red-500/10 border border-red-500/20 text-red-400"
+        }`}>
+          {testResult.success ? <CheckCircle className="h-3.5 w-3.5 shrink-0" /> : <XCircle className="h-3.5 w-3.5 shrink-0" />}
+          {testResult.message}
+        </div>
+      )}
+
+      {/* Source badge */}
+      {isConfigured && status?.source === "env" && (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-mono bg-muted/30 px-1.5 py-0.5 rounded text-[10px]">ENV</span> Key is set via environment variable — remove from env to manage here.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ApiKeysSection() {
+  const { data: status, refetch } = trpc.admin.getApiKeyStatus.useQuery();
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="font-semibold">Platform API Keys</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Optional API keys to unlock additional data. YouTube views and duration work without any key.
+        </p>
+      </div>
+      <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-3 text-xs text-green-400 flex items-start gap-2">
+        <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+        <div>
+          <strong>YouTube views, duration &amp; subscriber count require no API key.</strong> They are fetched automatically via YouTube's channel listing. Likes and comments are hidden by YouTube's policy since November 2021 — a YouTube Data API v3 key unlocks them.
+        </div>
+      </div>
+      <div className="space-y-3">
+        {API_KEY_CONFIGS.map((cfg) => (
+          <ApiKeyCard
+            key={cfg.service}
+            config={cfg}
+            status={status?.[cfg.service]}
+            onRefresh={() => refetch()}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Admin Panel ─────────────────────────────────────────────────────────
 export default function AdminPanel() {
   return (
@@ -523,13 +720,22 @@ export default function AdminPanel() {
         <p className="text-muted-foreground text-sm mt-1">Manage credentials, alert thresholds, sync controls, and exports</p>
       </div>
 
-      <Tabs defaultValue="credentials">
-        <TabsList className="grid grid-cols-4 w-full max-w-xl">
+      <Tabs defaultValue="apikeys">
+        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
+          <TabsTrigger value="apikeys" className="gap-1.5 text-xs"><Key className="h-3.5 w-3.5" /> API Keys</TabsTrigger>
           <TabsTrigger value="credentials" className="gap-1.5 text-xs"><Key className="h-3.5 w-3.5" /> Credentials</TabsTrigger>
           <TabsTrigger value="accounts" className="gap-1.5 text-xs"><Users className="h-3.5 w-3.5" /> Accounts</TabsTrigger>
           <TabsTrigger value="alerts" className="gap-1.5 text-xs"><Bell className="h-3.5 w-3.5" /> Alerts</TabsTrigger>
           <TabsTrigger value="sync" className="gap-1.5 text-xs"><Activity className="h-3.5 w-3.5" /> Sync</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="apikeys" className="mt-6">
+          <Card className="border-border/50 bg-card/80">
+            <CardContent className="p-6">
+              <ApiKeysSection />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="credentials" className="mt-6">
           <Card className="border-border/50 bg-card/80">
