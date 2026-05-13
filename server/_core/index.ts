@@ -8,7 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { dailySyncHandler, dailyReportHandler } from "../scheduledHandlers";
+import { dailySyncHandler, dailyReportHandler, dailyCommentScrapeHandler } from "../scheduledHandlers";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -40,6 +40,7 @@ async function startServer() {
   // Scheduled cron handlers — MUST be before Vite/static fallthrough
   app.post("/api/scheduled/daily-sync", dailySyncHandler);
   app.post("/api/scheduled/daily-report", dailyReportHandler);
+  app.post("/api/scheduled/daily-comment-scrape", dailyCommentScrapeHandler);
 
   // tRPC API
   app.use(

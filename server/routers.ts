@@ -78,7 +78,8 @@ import {
   toDbVideoId,
 } from "./channelEngine";
 import { ENV } from "./_core/env";
-import { updateVideoMeta } from "./db";
+import { updateVideoMeta, upsertCommentSnapshot, getLatestCommentSnapshot, getLatestCommentSnapshotsBulk } from "./db";
+import { scrapeVideoComments } from "./commentEngine";
 
 function todayStr() {
   return new Date().toISOString().split("T")[0]!;
@@ -263,6 +264,46 @@ const videosRouter = router({
         });
       }
       return { success: true };
+    }),
+
+  // Get latest comment snapshot for a video
+  getCommentData: protectedProcedure
+    .input(z.object({ videoId: z.string() }))
+    .query(async ({ input }) => {
+      return getLatestCommentSnapshot(input.videoId);
+    }),
+
+  // Get comment snapshots for multiple videos at once
+  getCommentDataBulk: protectedProcedure
+    .input(z.object({ videoIds: z.array(z.string()) }))
+    .query(async ({ input }) => {
+      if (input.videoIds.length === 0) return {};
+      return getLatestCommentSnapshotsBulk(input.videoIds);
+    }),
+
+  // Manually trigger comment scrape for a single video
+  scrapeComments: protectedProcedure
+    .input(z.object({ videoId: z.string() }))
+    .mutation(async ({ input }) => {
+      const rawId = input.videoId.replace(/^yt_/, "");
+      const result = await scrapeVideoComments(rawId);
+      const today = todayStr();
+      await upsertCommentSnapshot({
+        videoId: input.videoId,
+        date: today,
+        likeCount: result.likeCount,
+        commentCount: result.commentCount,
+        commentCountNum: result.commentCountNum,
+        topCommentId: result.topComment?.commentId,
+        topCommentAuthor: result.topComment?.author,
+        topCommentText: result.topComment?.text,
+        topCommentLikes: result.topComment?.likeCount,
+        topCommentLikesNum: result.topComment?.likeCountNum,
+        topCommentReplyCount: result.topComment?.replyCount ?? 0,
+        scrapeError: result.error,
+        scrapedAt: result.scrapedAt,
+      });
+      return { success: true, result };
     }),
 });
 

@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, RefreshCw, Trash2, Youtube, ChevronRight, ChevronDown,
   Eye, ThumbsUp, MessageCircle, Clock, ExternalLink, Pencil, Check, X,
-  Instagram, Twitter, AlertCircle
+  Instagram, Twitter, AlertCircle, Bot, Reply
 } from "lucide-react";
 
 const PROMO_TYPES = [
@@ -324,7 +324,7 @@ function VideoRow({ video }: { video: any }) {
         </td>
       </tr>
 
-      {/* Expanded shill table */}
+      {/* Expanded section: Sponsorship Log + Comment Panel */}
       {expanded && (
         <tr>
           <td colSpan={8} className="bg-muted/5 border-b border-border/30 px-4 py-3">
@@ -364,10 +364,121 @@ function VideoRow({ video }: { video: any }) {
                 </tbody>
               </table>
             </div>
+            {/* Robot Scrape Panel */}
+            <CommentPanel videoId={video.videoId} />
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+// ─── Comment Panel ───────────────────────────────────────────────────────────
+function CommentPanel({ videoId }: { videoId: string }) {
+  const utils = trpc.useUtils();
+  const { data: commentData, isLoading } = trpc.videos.getCommentData.useQuery({ videoId });
+
+  const scrape = trpc.videos.scrapeComments.useMutation({
+    onSuccess: (res) => {
+      if (res.result.error) {
+        toast.error(`Scrape failed: ${res.result.error}`);
+      } else {
+        const lc = res.result.likeCount;
+        const cc = res.result.commentCount;
+        toast.success(`Scraped! ${lc != null ? formatNum(lc) + " likes" : ""} \u00b7 ${cc ?? ""} comments`);
+        utils.videos.getCommentData.invalidate({ videoId });
+        utils.videos.getViewCounts.invalidate({ videoId });
+      }
+    },
+    onError: (e) => toast.error(`Scrape error: ${e.message}`),
+  });
+
+  const snap = commentData;
+  const hasData = snap && !snap.scrapeError && (snap.likeCount != null || snap.commentCount);
+
+  return (
+    <div className="rounded-lg border border-border/30 overflow-hidden mt-3">
+      <div className="flex items-center justify-between px-4 py-2 bg-muted/10 border-b border-border/20">
+        <div className="flex items-center gap-2">
+          <Bot className="h-3.5 w-3.5 text-amber-400" />
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Robot Scrape</span>
+          {snap?.date && (
+            <span className="text-xs text-muted-foreground/60">· last scraped {snap.date}</span>
+          )}
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 text-xs gap-1 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+          disabled={scrape.isPending}
+          onClick={() => scrape.mutate({ videoId })}
+        >
+          {scrape.isPending ? (
+            <><RefreshCw className="h-3 w-3 animate-spin" /> Scraping...</>
+          ) : (
+            <><Bot className="h-3 w-3" /> Scrape Now</>
+          )}
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="px-4 py-3 space-y-2">
+          <div className="h-4 bg-muted/20 rounded w-1/3 animate-pulse" />
+          <div className="h-4 bg-muted/20 rounded w-2/3 animate-pulse" />
+        </div>
+      ) : hasData ? (
+        <div className="px-4 py-3 space-y-3">
+          {/* Stats row */}
+          <div className="flex items-center gap-6 text-sm">
+            <div className="flex items-center gap-1.5">
+              <ThumbsUp className="h-3.5 w-3.5 text-amber-400" />
+              <span className="font-medium">{snap.likeCount != null ? formatNum(snap.likeCount) : "—"}</span>
+              <span className="text-muted-foreground text-xs">likes</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <MessageCircle className="h-3.5 w-3.5 text-blue-400" />
+              <span className="font-medium">{snap.commentCount ?? "—"}</span>
+              <span className="text-muted-foreground text-xs">comments</span>
+            </div>
+          </div>
+
+          {/* Top comment */}
+          {snap.topCommentText && (
+            <div className="rounded-md border border-border/30 bg-muted/5 p-3 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full bg-amber-500/20 flex items-center justify-center">
+                    <span className="text-[9px] font-bold text-amber-400">#1</span>
+                  </div>
+                  <span className="text-xs font-semibold">{snap.topCommentAuthor ?? "Unknown"}</span>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <ThumbsUp className="h-3 w-3" />
+                  <span>{snap.topCommentLikes ?? "0"}</span>
+                  {(snap.topCommentReplyCount ?? 0) > 0 && (
+                    <>
+                      <span className="mx-1">·</span>
+                      <Reply className="h-3 w-3" />
+                      <span>{snap.topCommentReplyCount} replies</span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">{snap.topCommentText}</p>
+            </div>
+          )}
+        </div>
+      ) : snap?.scrapeError ? (
+        <div className="px-4 py-3 flex items-center gap-2 text-xs text-red-400">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          <span>Scrape error: {snap.scrapeError}</span>
+        </div>
+      ) : (
+        <div className="px-4 py-3 text-xs text-muted-foreground">
+          No data yet. Click <strong>Scrape Now</strong> to fetch likes, comment count, and top comment from YouTube.
+        </div>
+      )}
+    </div>
   );
 }
 

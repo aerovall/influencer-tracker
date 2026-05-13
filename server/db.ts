@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
@@ -18,6 +18,7 @@ import {
   socialAccounts,
   socialPosts,
   socialPostSnapshots,
+  videoCommentSnapshots,
 } from "../drizzle/schema";
 import type { InsertYoutubeChannel } from "../drizzle/schema";
 import type {
@@ -743,4 +744,105 @@ export async function markAllVideosSeen(): Promise<void> {
   const db = await getDb();
   if (!db) return;
   await db.update(videos).set({ isSeen: true }).where(eq(videos.isSeen, false));
+}
+
+// ─── Video Comment Snapshots ──────────────────────────────────────────────────
+
+/**
+ * Upsert a comment snapshot for a video on a given date.
+ * Uses INSERT ... ON DUPLICATE KEY UPDATE so re-running the daily scrape is safe.
+ */
+export async function upsertCommentSnapshot(data: {
+  videoId: string;
+  date: string;
+  likeCount?: number | null;
+  commentCount?: string | null;
+  commentCountNum?: number | null;
+  topCommentId?: string | null;
+  topCommentAuthor?: string | null;
+  topCommentText?: string | null;
+  topCommentLikes?: string | null;
+  topCommentLikesNum?: number | null;
+  topCommentReplyCount?: number;
+  scrapeError?: string | null;
+  scrapedAt: number;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const snapshotId = `${data.videoId}_${data.date}`;
+  await db
+    .insert(videoCommentSnapshots)
+    .values({
+      snapshotId,
+      videoId: data.videoId,
+      date: data.date,
+      likeCount: data.likeCount ?? null,
+      commentCount: data.commentCount ?? null,
+      commentCountNum: data.commentCountNum ?? null,
+      topCommentId: data.topCommentId ?? null,
+      topCommentAuthor: data.topCommentAuthor ?? null,
+      topCommentText: data.topCommentText ?? null,
+      topCommentLikes: data.topCommentLikes ?? null,
+      topCommentLikesNum: data.topCommentLikesNum ?? null,
+      topCommentReplyCount: data.topCommentReplyCount ?? 0,
+      scrapeError: data.scrapeError ?? null,
+      scrapedAt: data.scrapedAt,
+    })
+    .onDuplicateKeyUpdate({
+      set: {
+        likeCount: data.likeCount ?? null,
+        commentCount: data.commentCount ?? null,
+        commentCountNum: data.commentCountNum ?? null,
+        topCommentId: data.topCommentId ?? null,
+        topCommentAuthor: data.topCommentAuthor ?? null,
+        topCommentText: data.topCommentText ?? null,
+        topCommentLikes: data.topCommentLikes ?? null,
+        topCommentLikesNum: data.topCommentLikesNum ?? null,
+        topCommentReplyCount: data.topCommentReplyCount ?? 0,
+        scrapeError: data.scrapeError ?? null,
+        scrapedAt: data.scrapedAt,
+      },
+    });
+}
+
+/**
+ * Get the latest comment snapshot for a video.
+ */
+export async function getLatestCommentSnapshot(videoId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(videoCommentSnapshots)
+    .where(eq(videoCommentSnapshots.videoId, videoId))
+    .orderBy(sql`scraped_at DESC`)
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Get latest comment snapshots for multiple video IDs in one query.
+ * Returns a map of videoId -> snapshot.
+ */
+export async function getLatestCommentSnapshotsBulk(
+  videoIds: string[]
+): Promise<Record<string, typeof videoCommentSnapshots.$inferSelect>> {
+  const db = await getDb();
+  if (!db || videoIds.length === 0) return {};
+
+  // Fetch all snapshots for these videos, ordered by date desc
+  const rows = await db
+    .select()
+    .from(videoCommentSnapshots)
+    .where(inArray(videoCommentSnapshots.videoId, videoIds))
+    .orderBy(sql`scraped_at DESC`);
+
+  // Keep only the latest per videoId
+  const map: Record<string, typeof videoCommentSnapshots.$inferSelect> = {};
+  for (const row of rows) {
+    if (!map[row.videoId]) {
+      map[row.videoId] = row;
+    }
+  }
+  return map;
 }

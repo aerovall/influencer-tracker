@@ -198,3 +198,13 @@
 - [x] UI: Popover shows number inputs for likes and comments with Save button
 - [x] UI: After save, optimistically update the displayed value and show a toast
 - [x] UI: Show a small "manual" indicator (e.g. pencil icon) on cells that have manually entered values
+
+## v2.4 — No-Code YouTube Scraping Robot (Daily)
+- [x] Test YouTube InnerTube/page scraping for likes count, comment count, top comment, replies
+- [x] Build scrapeVideoStats() engine using youtubei.js (handles bot detection) for likes/comments
+- [x] DB schema: video_comment_snapshots table (videoId, date, likeCount, commentCount, topCommentText, topCommentAuthor, topCommentLikes, topCommentReplyCount, scrapeError, scrapedAt)
+- [x] tRPC videos.getCommentData query — return latest scraped comment data per video
+- [x] tRPC videos.scrapeComments mutation — manually trigger scrape for one video
+- [x] Daily schedule handler: /api/scheduled/daily-comment-scrape (activate after deploy)
+- [x] UI: CommentPanel in expanded video row — shows likes, comment count, top comment with author/likes/reply count
+- [x] UI: "Last scraped" date + "Scrape Now" button per video with loading state and success toast

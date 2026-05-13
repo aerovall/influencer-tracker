@@ -297,3 +297,29 @@ export const socialPostSnapshots = mysqlTable("social_post_snapshots", {
 
 export type SocialPostSnapshot = typeof socialPostSnapshots.$inferSelect;
 export type InsertSocialPostSnapshot = typeof socialPostSnapshots.$inferInsert;
+
+// ─── Video Comment Snapshots (scraped daily, no API key needed) ───────────────
+export const videoCommentSnapshots = mysqlTable("video_comment_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  snapshotId: varchar("snapshot_id", { length: 150 }).notNull().unique(), // videoId + date
+  videoId: varchar("video_id", { length: 100 }).notNull(),
+  date: varchar("date", { length: 10 }).notNull(),
+  // Video-level stats
+  likeCount: bigint("like_count", { mode: "number" }),           // video likes
+  commentCount: varchar("comment_count", { length: 30 }),        // e.g. "2,437,584"
+  commentCountNum: bigint("comment_count_num", { mode: "number" }), // parsed numeric
+  // Top comment
+  topCommentId: varchar("top_comment_id", { length: 100 }),
+  topCommentAuthor: varchar("top_comment_author", { length: 255 }),
+  topCommentText: text("top_comment_text"),
+  topCommentLikes: varchar("top_comment_likes", { length: 30 }), // e.g. "239K"
+  topCommentLikesNum: bigint("top_comment_likes_num", { mode: "number" }),
+  topCommentReplyCount: int("top_comment_reply_count").default(0),
+  // Metadata
+  scrapeError: text("scrape_error"),
+  scrapedAt: bigint("scraped_at", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type VideoCommentSnapshot = typeof videoCommentSnapshots.$inferSelect;
+export type InsertVideoCommentSnapshot = typeof videoCommentSnapshots.$inferInsert;
