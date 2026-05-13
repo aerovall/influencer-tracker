@@ -280,9 +280,15 @@ function ChannelCard({ channel }: { channel: any }) {
 
   const syncChannel = trpc.channels.syncChannel.useMutation({
     onSuccess: (res) => {
-      toast.success(`Synced: ${res.newVideos} new videos, ${res.updatedStats} stats updated`);
+      const channelLabel = res.channelName ? `${res.channelName}: ` : "";
+      if (res.newVideos > 0) {
+        toast.success(`${channelLabel}${res.newVideos} new video${res.newVideos !== 1 ? "s" : ""} discovered! Stats refreshed for ${res.updatedStats} video${res.updatedStats !== 1 ? "s" : ""}.`);
+      } else {
+        toast.success(`${channelLabel}Already up to date — stats refreshed for ${res.updatedStats} video${res.updatedStats !== 1 ? "s" : ""}.`);
+      }
       utils.channels.list.invalidate();
       utils.channels.listByChannel.invalidate();
+      utils.videos.getViewCounts.invalidate();
     },
     onError: (e) => toast.error(`Sync failed: ${e.message}`),
   });
