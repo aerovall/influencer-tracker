@@ -208,3 +208,10 @@
 - [x] Daily schedule handler: /api/scheduled/daily-comment-scrape (activate after deploy)
 - [x] UI: CommentPanel in expanded video row — shows likes, comment count, top comment with author/likes/reply count
 - [x] UI: "Last scraped" date + "Scrape Now" button per video with loading state and success toast
+
+## v2.5 — Bulk Scrape All Button
+- [x] Backend: tRPC videos.bulkScrapeStatus query — return current scrape job state (idle/running/done, progress, errors)
+- [x] Backend: tRPC videos.startBulkScrape mutation — kick off background scrape for all YouTube videos, store progress in-memory
+- [x] UI: Channels page top bar — "Bulk Scrape All" button with progress bar (X/Y videos scraped)
+- [x] UI: Show per-video status (scraped / error) in progress panel
+- [x] UI: Auto-refresh comment data after bulk scrape completes

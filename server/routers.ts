@@ -79,7 +79,30 @@ import {
 } from "./channelEngine";
 import { ENV } from "./_core/env";
 import { updateVideoMeta, upsertCommentSnapshot, getLatestCommentSnapshot, getLatestCommentSnapshotsBulk } from "./db";
-import { scrapeVideoComments } from "./commentEngine";
+import { scrapeVideoComments, scrapeVideoBatch } from "./commentEngine";
+
+// ─── In-memory bulk scrape job store ─────────────────────────────────────────
+interface BulkScrapeJob {
+  jobId: string;
+  status: "idle" | "running" | "done" | "error";
+  total: number;
+  done: number;
+  currentVideoId: string | null;
+  errors: Array<{ videoId: string; error: string }>;
+  results: Array<{ videoId: string; status: "scraped" | "error"; likeCount?: number | null; commentCount?: string | null }>;
+  startedAt: number;
+  finishedAt: number | null;
+}
+
+// Singleton job state — only one bulk scrape can run at a time
+let _bulkJob: BulkScrapeJob | null = null;
+
+function getBulkJob(): BulkScrapeJob {
+  if (!_bulkJob) {
+    _bulkJob = { jobId: "", status: "idle", total: 0, done: 0, currentVideoId: null, errors: [], results: [], startedAt: 0, finishedAt: null };
+  }
+  return _bulkJob!;
+}
 
 function todayStr() {
   return new Date().toISOString().split("T")[0]!;
@@ -279,6 +302,105 @@ const videosRouter = router({
     .query(async ({ input }) => {
       if (input.videoIds.length === 0) return {};
       return getLatestCommentSnapshotsBulk(input.videoIds);
+    }),
+
+  // Start a background bulk scrape for all YouTube videos
+  startBulkScrape: protectedProcedure
+    .mutation(async () => {
+      const job = getBulkJob();
+      if (job.status === "running") {
+        return { jobId: job.jobId, alreadyRunning: true };
+      }
+
+      // Fetch all YouTube video IDs
+      const allVideos = await getAllVideos();
+      const ytVideos = allVideos.filter((v: any) =>
+        typeof v.videoId === "string" && v.videoId.startsWith("yt_")
+      );
+      const rawIds = ytVideos.map((v: any) => (v.videoId as string).replace(/^yt_/, ""));
+
+      const jobId = nanoid(8);
+      _bulkJob = {
+        jobId,
+        status: "running",
+        total: rawIds.length,
+        done: 0,
+        currentVideoId: null,
+        errors: [],
+        results: [],
+        startedAt: Date.now(),
+        finishedAt: null,
+      };
+
+      // Fire-and-forget background processing
+      (async () => {
+        const today = todayStr();
+        for (const rawId of rawIds) {
+          if (!_bulkJob || _bulkJob.jobId !== jobId) break; // cancelled
+          _bulkJob.currentVideoId = rawId;
+          try {
+            const result = await scrapeVideoComments(rawId);
+            const dbVideoId = `yt_${rawId}`;
+            await upsertCommentSnapshot({
+              videoId: dbVideoId,
+              date: today,
+              likeCount: result.likeCount,
+              commentCount: result.commentCount,
+              commentCountNum: result.commentCountNum,
+              topCommentId: result.topComment?.commentId,
+              topCommentAuthor: result.topComment?.author,
+              topCommentText: result.topComment?.text,
+              topCommentLikes: result.topComment?.likeCount,
+              topCommentLikesNum: result.topComment?.likeCountNum,
+              topCommentReplyCount: result.topComment?.replyCount ?? 0,
+              scrapeError: result.error ?? null,
+              scrapedAt: result.scrapedAt,
+            });
+            if (result.error) {
+              _bulkJob.errors.push({ videoId: rawId, error: result.error });
+              _bulkJob.results.push({ videoId: rawId, status: "error" });
+            } else {
+              _bulkJob.results.push({ videoId: rawId, status: "scraped", likeCount: result.likeCount, commentCount: result.commentCount });
+            }
+          } catch (e: any) {
+            _bulkJob.errors.push({ videoId: rawId, error: e?.message ?? "Unknown error" });
+            _bulkJob.results.push({ videoId: rawId, status: "error" });
+          }
+          _bulkJob.done++;
+          // Polite delay between requests
+          await new Promise((r) => setTimeout(r, 1200));
+        }
+        if (_bulkJob && _bulkJob.jobId === jobId) {
+          _bulkJob.status = "done";
+          _bulkJob.currentVideoId = null;
+          _bulkJob.finishedAt = Date.now();
+        }
+      })().catch((e) => {
+        if (_bulkJob && _bulkJob.jobId === jobId) {
+          _bulkJob.status = "error";
+          _bulkJob.finishedAt = Date.now();
+        }
+      });
+
+      return { jobId, alreadyRunning: false };
+    }),
+
+  // Poll bulk scrape job status
+  bulkScrapeStatus: protectedProcedure
+    .query(() => {
+      const job = getBulkJob();
+      return {
+        status: job.status,
+        total: job.total,
+        done: job.done,
+        currentVideoId: job.currentVideoId,
+        errors: job.errors,
+        // Return last 20 results to avoid oversized payloads
+        recentResults: job.results.slice(-20),
+        startedAt: job.startedAt,
+        finishedAt: job.finishedAt,
+        percent: job.total > 0 ? Math.round((job.done / job.total) * 100) : 0,
+      };
     }),
 
   // Manually trigger comment scrape for a single video
