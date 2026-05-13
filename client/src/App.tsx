@@ -11,6 +11,7 @@ import Analytics from "./pages/Analytics";
 import Shills from "./pages/Shills";
 import Reports from "./pages/Reports";
 import AdminPanel from "./pages/AdminPanel";
+import Channels from "./pages/Channels";
 
 function Router() {
   return (
@@ -21,6 +22,7 @@ function Router() {
         <Route path="/analytics" component={Analytics} />
         <Route path="/shills" component={Shills} />
         <Route path="/reports" component={Reports} />
+        <Route path="/channels" component={Channels} />
         <Route path="/admin" component={AdminPanel} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />

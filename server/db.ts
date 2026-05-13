@@ -14,7 +14,9 @@ import {
   users,
   videos,
   viewCounts,
+  youtubeChannels,
 } from "../drizzle/schema";
+import type { InsertYoutubeChannel } from "../drizzle/schema";
 import type {
   InsertAlertEvent,
   InsertAlertThreshold,
@@ -509,4 +511,74 @@ export async function getRecentSyncLogs(limit = 20) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(syncLog).orderBy(desc(syncLog.startedAt)).limit(limit);
+}
+
+// ─── YouTube Channels ──────────────────────────────────────────────────────────
+export async function getAllChannels() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(youtubeChannels).orderBy(youtubeChannels.channelName);
+}
+
+export async function getChannelById(channelId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db.select().from(youtubeChannels).where(eq(youtubeChannels.channelId, channelId)).limit(1);
+  return rows[0];
+}
+
+export async function getChannelsByInfluencer(influencerName: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(youtubeChannels).where(eq(youtubeChannels.influencerName, influencerName));
+}
+
+export async function upsertChannel(data: InsertYoutubeChannel) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .insert(youtubeChannels)
+    .values(data)
+    .onDuplicateKeyUpdate({
+      set: {
+        channelName: data.channelName,
+        channelHandle: data.channelHandle ?? null,
+        thumbnailUrl: data.thumbnailUrl ?? null,
+        subscriberCount: data.subscriberCount ?? 0,
+        videoCount: data.videoCount ?? 0,
+        description: data.description ?? null,
+        isActive: data.isActive ?? true,
+      },
+    });
+}
+
+export async function updateChannelLastChecked(channelId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(youtubeChannels)
+    .set({ lastCheckedAt: new Date() })
+    .where(eq(youtubeChannels.channelId, channelId));
+}
+
+export async function deleteChannel(channelId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(youtubeChannels).where(eq(youtubeChannels.channelId, channelId));
+}
+
+export async function getVideosByChannelId(channelId: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(videos)
+    .where(eq(videos.channelId, channelId))
+    .orderBy(desc(videos.publishedDate));
+}
+
+export async function getActiveChannels() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(youtubeChannels).where(eq(youtubeChannels.isActive, true));
 }

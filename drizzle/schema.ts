@@ -58,12 +58,33 @@ export const platformAccounts = mysqlTable("platform_accounts", {
 export type PlatformAccount = typeof platformAccounts.$inferSelect;
 export type InsertPlatformAccount = typeof platformAccounts.$inferInsert;
 
+// ─── YouTube Channels ───────────────────────────────────────────────────────
+export const youtubeChannels = mysqlTable("youtube_channels", {
+  id: int("id").autoincrement().primaryKey(),
+  channelId: varchar("channel_id", { length: 100 }).notNull().unique(),
+  channelHandle: varchar("channel_handle", { length: 255 }),
+  channelName: varchar("channel_name", { length: 255 }).notNull(),
+  influencerName: varchar("influencer_name", { length: 100 }).notNull(),
+  thumbnailUrl: text("thumbnail_url"),
+  subscriberCount: bigint("subscriber_count", { mode: "number" }).default(0),
+  videoCount: int("video_count").default(0),
+  description: text("description"),
+  isActive: boolean("isActive").default(true).notNull(),
+  lastCheckedAt: timestamp("last_checked_at"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type YoutubeChannel = typeof youtubeChannels.$inferSelect;
+export type InsertYoutubeChannel = typeof youtubeChannels.$inferInsert;
+
 // ─── Table 1: Videos ──────────────────────────────────────────────────────────
 export const videos = mysqlTable("videos", {
   id: int("id").autoincrement().primaryKey(),
   videoId: varchar("video_id", { length: 100 }).notNull().unique(),
   influencerName: varchar("influencer_name", { length: 100 }).notNull(),
   platform: mysqlEnum("platform", ["YouTube", "Instagram", "TikTok"]).notNull(),
+  channelId: varchar("channel_id", { length: 100 }),  // FK to youtube_channels.channel_id
   videoUrl: text("video_url").notNull(),
   title: text("title").notNull(),
   publishedDate: varchar("published_date", { length: 10 }).notNull(),

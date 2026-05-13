@@ -10,10 +10,12 @@ import {
   getAllInfluencers,
   getAllPlatformAccounts,
   getAllVideos,
+  getActiveChannels,
   getAvgEngagementRate,
   getLatestViewCountByVideoId,
   getRecentSyncLogs,
   getUnreadAlertCount,
+  getVideoByVideoId,
   getVideoStats,
   getViewCountTrends,
   insertAlertEvent,
@@ -21,10 +23,12 @@ import {
   insertSyncLog,
   insertVideo,
   insertViewCount,
+  updateChannelLastChecked,
   updatePlatformAccountSyncTime,
   updateReportSchedule,
   updateSyncLog,
 } from "./db";
+import { fetchBulkVideoStats, fetchChannelUploads } from "./channelEngine";
 import { notifyOwner } from "./_core/notification";
 import {
   fetchInstagramUserMedia,
@@ -388,14 +392,88 @@ ${stats.byPlatform.map((r) => `• ${r.platform}: ${r.count} videos`).join("\n")
 
 // ─── Full Daily Job ───────────────────────────────────────────────────────────
 
+/**
+ * Sync all linked YouTube channels: detect new uploads and snapshot today's stats.
+ */
+export async function runChannelSync(): Promise<{ newVideos: number; updatedStats: number; errors: string[] }> {
+  const channels = await getActiveChannels();
+  let newVideos = 0;
+  let updatedStats = 0;
+  const errors: string[] = [];
+
+  for (const channel of channels) {
+    try {
+      const uploads = await fetchChannelUploads(channel.channelId, 10);
+      const rawIds = uploads.map((u) => u.videoId);
+      const statsMap = await fetchBulkVideoStats(rawIds);
+
+      for (const upload of uploads) {
+        const stats = statsMap.get(upload.videoId);
+        const existing = await getVideoByVideoId(upload.ytVideoId);
+
+        if (!existing) {
+          // New video discovered on this channel
+          await insertVideo({
+            videoId: upload.ytVideoId,
+            influencerName: channel.influencerName,
+            platform: "YouTube",
+            channelId: channel.channelId,
+            videoUrl: upload.videoUrl,
+            title: stats?.title ?? upload.title,
+            publishedDate: stats?.publishedDate ?? upload.publishedDate,
+            dateAdded: todayStr(),
+            thumbnailUrl: stats?.thumbnailUrl ?? upload.thumbnailUrl,
+            durationSeconds: stats?.durationSeconds ?? upload.durationSeconds,
+            isActive: true,
+          });
+          newVideos++;
+        }
+
+        // Snapshot today's stats (skip if already done today)
+        if (stats) {
+          const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
+          try {
+            await insertViewCount({
+              countId,
+              videoId: upload.ytVideoId,
+              date: todayStr(),
+              viewCount: stats.viewCount,
+              likes: stats.likeCount,
+              comments: 0,
+              shares: 0,
+              engagementRate: "0",
+            });
+            updatedStats++;
+          } catch {
+            // duplicate key = already snapshotted today, skip silently
+          }
+        }
+      }
+
+      await updateChannelLastChecked(channel.channelId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`Channel ${channel.channelId} (${channel.channelName}): ${msg}`);
+      console.error(`[ChannelSync] Error for ${channel.channelId}:`, err);
+    }
+  }
+
+  return { newVideos, updatedStats, errors };
+}
+
 export async function runFullDailySync(): Promise<{
   discovery: Awaited<ReturnType<typeof runVideoDiscovery>>;
   snapshot: Awaited<ReturnType<typeof runViewCountSnapshot>>;
+  channelSync: Awaited<ReturnType<typeof runChannelSync>>;
   alerts: number;
 }> {
-  const discovery = await runVideoDiscovery();
+  // Run channel sync (new uploads + stats) in parallel with legacy platform discovery
+  const [discovery, channelSync] = await Promise.all([
+    runVideoDiscovery(),
+    runChannelSync(),
+  ]);
   const snapshot = await runViewCountSnapshot();
   const alerts = await runAlertEvaluation();
   await generateDailyReport();
-  return { discovery, snapshot, alerts };
+  return { discovery, snapshot, channelSync, alerts };
 }

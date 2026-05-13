@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { BarChart3, LayoutDashboard, LogOut, PanelLeft, Settings, Tag, Video, FileText, Bell } from "lucide-react";
+import { BarChart3, LayoutDashboard, LogOut, PanelLeft, Settings, Tag, Video, FileText, Bell, Youtube } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -29,6 +29,7 @@ import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: Youtube, label: "Channels", path: "/channels" },
   { icon: Video, label: "Videos", path: "/videos" },
   { icon: BarChart3, label: "Analytics", path: "/analytics" },
   { icon: Tag, label: "Sponsorships", path: "/shills" },

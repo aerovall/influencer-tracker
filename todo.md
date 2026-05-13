@@ -108,3 +108,19 @@
 - [x] YouTube publish date: use video publish date from InnerTube or fall back gracefully with a note
 - [x] Add vitest coverage for extractYouTubeVideoId URL parsing
 - [x] Add vitest coverage for fetchYouTubeVideoInfo error/null handling
+
+## Per-Channel Automation (v1.2)
+- [x] DB: add youtube_channels table (id, influencer_name, channel_id, channel_handle, channel_name, thumbnail_url, subscriber_count, last_checked_at, is_active)
+- [x] DB: add channel_id FK to videos table
+- [x] DB: update shills table to use auto-increment shill_id with shl_NNN format
+- [x] Channel discovery: fetch last 10 uploads on channel link via youtubei.js
+- [x] Channel daily check: detect new videos uploaded since last_checked_at
+- [x] Daily stats pull: update view_counts, likes, comments for all active channel videos
+- [x] tRPC: channels.link, channels.list, channels.unlink, channels.syncNow
+- [x] tRPC: videos.listByChannel
+- [x] tRPC: shills CRUD scoped per video (create, list, update, delete)
+- [x] UI: Channels page — link channel form, channel cards with video count and last sync
+- [x] UI: Channel detail page — video list with stats, per-video shill table
+- [x] UI: Per-video shill table with inline add/edit/delete rows
+- [x] Update daily cron to iterate channels and check for new uploads + stats
+- [x] Update tests for new channel and shill flows

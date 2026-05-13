@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `youtube_channels` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`channel_id` varchar(100) NOT NULL,\n\t`channel_handle` varchar(255),\n\t`channel_name` varchar(255) NOT NULL,\n\t`influencer_name` varchar(100) NOT NULL,\n\t`thumbnail_url` text,\n\t`subscriber_count` bigint DEFAULT 0,\n\t`video_count` int DEFAULT 0,\n\t`description` text,\n\t`isActive` boolean NOT NULL DEFAULT true,\n\t`last_checked_at` timestamp,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `youtube_channels_id` PRIMARY KEY(`id`),\n\tCONSTRAINT `youtube_channels_channel_id_unique` UNIQUE(`channel_id`)\n);\nALTER TABLE `videos` ADD `channel_id` varchar(100);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute CREATE TABLE `youtube_channels` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`channel_id` varchar(100) NOT NULL,\n\t`channel_handle` varchar(255),\n\t`channel_name` varchar(255) NOT NULL,\n\t`influencer_name` varchar(100) NOT NULL,\n\t`thumbnail_url` text,\n\t`subscriber_count` bigint DEFAULT 0,\n\t`video_count` int DEFAULT 0,\n\t`description` text,\n\t`isActive` boolean NOT NULL DEFAULT true,\n\t`last_checked_at` timestamp,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\t`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\tCONSTRAINT `youtube_channels_id` PRIMARY KEY(`id`),\n\tCONSTRAINT `youtube_channels_channel_id_unique` UNIQUE(`channel_id`)\n);\nALTER TABLE `videos` ADD `channel_id` varchar(100);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 2234
+}

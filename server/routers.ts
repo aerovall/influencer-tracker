@@ -8,11 +8,13 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   createInfluencer,
   deleteAlertThreshold,
+  deleteChannel,
   deleteCredential,
   deleteInfluencer,
   deleteShill,
   deleteVideo,
   getAllAlertThresholds,
+  getAllChannels,
   getAllCredentials,
   getAllInfluencers,
   getAllPlatformAccounts,
@@ -22,6 +24,8 @@ import {
   getAllViewCounts,
   getAlertEvents,
   getAvgEngagementRate,
+  getChannelById,
+  getChannelsByInfluencer,
   getInfluencerById,
   getPlatformAccountsByInfluencer,
   getRecentSyncLogs,
@@ -32,6 +36,7 @@ import {
   getUnreadAlertCount,
   getVideoByVideoId,
   getVideoStats,
+  getVideosByChannelId,
   getViewCountTrends,
   getViewCountsByVideoId,
   insertAlertThreshold,
@@ -39,10 +44,12 @@ import {
   insertVideo,
   markAlertRead,
   updateAlertThreshold,
+  updateChannelLastChecked,
   updateInfluencer,
   updateReportSchedule,
   updateShill,
   updateVideo,
+  upsertChannel,
   upsertCredential,
   upsertPlatformAccount,
 } from "./db";
@@ -54,6 +61,12 @@ import {
   runViewCountSnapshot,
 } from "./syncEngine";
 import { extractYouTubeVideoId, fetchYouTubeVideoInfo } from "./platformApi";
+import {
+  fetchBulkVideoStats,
+  fetchChannelUploads,
+  resolveChannel,
+  toDbVideoId,
+} from "./channelEngine";
 
 function todayStr() {
   return new Date().toISOString().split("T")[0]!;
@@ -449,7 +462,195 @@ const exportRouter = router({
   }),
 });
 
-// ─── App Router ───────────────────────────────────────────────────────────────
+// // ─── Channels Router ──────────────────────────────────────────────────────────
+const channelsRouter = router({
+  /** List all linked YouTube channels, optionally filtered by influencer. */
+  list: protectedProcedure
+    .input(z.object({ influencerName: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      if (input?.influencerName) return getChannelsByInfluencer(input.influencerName);
+      return getAllChannels();
+    }),
+
+  /** Get a single channel with its videos. */
+  getWithVideos: protectedProcedure
+    .input(z.object({ channelId: z.string() }))
+    .query(async ({ input }) => {
+      const channel = await getChannelById(input.channelId);
+      if (!channel) throw new Error("Channel not found");
+      const videos = await getVideosByChannelId(input.channelId);
+      return { channel, videos };
+    }),
+
+  /**
+   * Link a new YouTube channel.
+   * Accepts a channel URL, @handle, or bare channel ID.
+   * Immediately fetches the last 10 uploads and their stats.
+   */
+  link: protectedProcedure
+    .input(
+      z.object({
+        channelInput: z.string().min(1, "Channel URL or handle is required"),
+        influencerName: z.enum(["Levi", "NoBs", "Danielle"]),
+      })
+    )
+    .mutation(async ({ input }) => {
+      // 1. Resolve channel metadata
+      const channelInfo = await resolveChannel(input.channelInput);
+
+      // 2. Persist channel record
+      await upsertChannel({
+        channelId: channelInfo.channelId,
+        channelHandle: channelInfo.channelHandle,
+        channelName: channelInfo.channelName,
+        influencerName: input.influencerName,
+        thumbnailUrl: channelInfo.thumbnailUrl,
+        subscriberCount: channelInfo.subscriberCount,
+        videoCount: channelInfo.videoCount,
+        description: channelInfo.description,
+        isActive: true,
+      });
+
+      // 3. Fetch last 10 uploads
+      const uploads = await fetchChannelUploads(channelInfo.channelId, 10);
+
+      // 4. Fetch detailed stats for each video
+      const rawIds = uploads.map((u) => u.videoId);
+      const statsMap = await fetchBulkVideoStats(rawIds);
+
+      // 5. Persist each video (skip if already exists)
+      let newVideos = 0;
+      for (const upload of uploads) {
+        const existing = await getVideoByVideoId(upload.ytVideoId);
+        if (existing) continue;
+        const stats = statsMap.get(upload.videoId);
+        await insertVideo({
+          videoId: upload.ytVideoId,
+          influencerName: input.influencerName,
+          platform: "YouTube",
+          channelId: channelInfo.channelId,
+          videoUrl: upload.videoUrl,
+          title: stats?.title ?? upload.title,
+          publishedDate: stats?.publishedDate ?? upload.publishedDate,
+          dateAdded: todayStr(),
+          thumbnailUrl: stats?.thumbnailUrl ?? upload.thumbnailUrl,
+          durationSeconds: stats?.durationSeconds ?? upload.durationSeconds,
+          isActive: true,
+        });
+        // Snapshot initial view count
+        const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
+        const existing_vc = null; // first time, always insert
+        try {
+          const { insertViewCount } = await import("./db");
+          await insertViewCount({
+            countId,
+            videoId: upload.ytVideoId,
+            date: todayStr(),
+            viewCount: stats?.viewCount ?? upload.viewCount,
+            likes: stats?.likeCount ?? 0,
+            comments: 0,
+            shares: 0,
+            engagementRate: "0",
+          });
+        } catch {
+          // duplicate key = already snapshotted today, skip
+        }
+        newVideos++;
+      }
+
+      // 6. Update last checked timestamp
+      await updateChannelLastChecked(channelInfo.channelId);
+
+      return {
+        success: true,
+        channelId: channelInfo.channelId,
+        channelName: channelInfo.channelName,
+        videosDiscovered: uploads.length,
+        newVideosAdded: newVideos,
+      };
+    }),
+
+  /** Manually trigger a sync for a specific channel (discover new videos + update stats). */
+  syncChannel: protectedProcedure
+    .input(z.object({ channelId: z.string() }))
+    .mutation(async ({ input }) => {
+      const channel = await getChannelById(input.channelId);
+      if (!channel) throw new Error("Channel not found");
+
+      // Fetch latest uploads
+      const uploads = await fetchChannelUploads(input.channelId, 10);
+      const rawIds = uploads.map((u) => u.videoId);
+      const statsMap = await fetchBulkVideoStats(rawIds);
+
+      let newVideos = 0;
+      let updatedStats = 0;
+
+      for (const upload of uploads) {
+        const existing = await getVideoByVideoId(upload.ytVideoId);
+        const stats = statsMap.get(upload.videoId);
+
+        if (!existing) {
+          // New video discovered
+          await insertVideo({
+            videoId: upload.ytVideoId,
+            influencerName: channel.influencerName,
+            platform: "YouTube",
+            channelId: input.channelId,
+            videoUrl: upload.videoUrl,
+            title: stats?.title ?? upload.title,
+            publishedDate: stats?.publishedDate ?? upload.publishedDate,
+            dateAdded: todayStr(),
+            thumbnailUrl: stats?.thumbnailUrl ?? upload.thumbnailUrl,
+            durationSeconds: stats?.durationSeconds ?? upload.durationSeconds,
+            isActive: true,
+          });
+          newVideos++;
+        }
+
+        // Always snapshot today's stats
+        if (stats) {
+          const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
+          try {
+            const { insertViewCount } = await import("./db");
+            await insertViewCount({
+              countId,
+              videoId: upload.ytVideoId,
+              date: todayStr(),
+              viewCount: stats.viewCount,
+              likes: stats.likeCount,
+              comments: 0,
+              shares: 0,
+              engagementRate: "0",
+            });
+            updatedStats++;
+          } catch {
+            // duplicate = already snapshotted today
+          }
+        }
+      }
+
+      await updateChannelLastChecked(input.channelId);
+
+      return { success: true, newVideos, updatedStats };
+    }),
+
+  /** List all videos belonging to a specific channel. */
+  listByChannel: protectedProcedure
+    .input(z.object({ channelId: z.string() }))
+    .query(async ({ input }) => {
+      return getVideosByChannelId(input.channelId);
+    }),
+
+  /** Unlink (soft-delete) a channel. */
+  unlink: protectedProcedure
+    .input(z.object({ channelId: z.string() }))
+    .mutation(async ({ input }) => {
+      await deleteChannel(input.channelId);
+      return { success: true };
+    }),
+});
+
+// ─── App Router ──────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -468,6 +669,7 @@ export const appRouter = router({
   reports: reportsRouter,
   alerts: alertsRouter,
   export: exportRouter,
+  channels: channelsRouter,
 });
 
 export type AppRouter = typeof appRouter;
