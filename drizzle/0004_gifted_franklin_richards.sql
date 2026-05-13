@@ -1,0 +1,1 @@
+ALTER TABLE `videos` ADD `isSeen` boolean DEFAULT true NOT NULL;

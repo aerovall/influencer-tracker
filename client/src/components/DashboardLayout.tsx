@@ -22,6 +22,7 @@ import {
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
 import { BarChart3, LayoutDashboard, LogOut, PanelLeft, Settings, Tag, Video, FileText, Bell, Youtube } from "lucide-react";
+import { trpc } from "@/lib/trpc";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from './DashboardLayoutSkeleton';
@@ -120,6 +121,13 @@ function DashboardLayoutContent({
   const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
 
+  // Poll for unseen new videos every 60 seconds to drive the Channels nav badge
+  const { data: unseenData } = trpc.channels.unseenCount.useQuery(undefined, {
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  });
+  const unseenCount = unseenData?.count ?? 0;
+
   useEffect(() => {
     if (isCollapsed) {
       setIsResizing(false);
@@ -198,7 +206,15 @@ function DashboardLayoutContent({
                       <item.icon
                         className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
                       />
-                      <span>{item.label}</span>
+                      <span className="flex-1">{item.label}</span>
+                      {item.path === "/channels" && unseenCount > 0 && (
+                        <span
+                          className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none bg-primary text-primary-foreground"
+                          title={`${unseenCount} new video${unseenCount !== 1 ? 's' : ''} discovered`}
+                        >
+                          {unseenCount > 99 ? "99+" : unseenCount}
+                        </span>
+                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -687,8 +687,15 @@ export default function Channels() {
   const { data: ytChannels } = trpc.channels.list.useQuery();
   const { data: igAccounts } = trpc.socialAccounts.list.useQuery({ platform: "Instagram" });
   const { data: xAccounts } = trpc.socialAccounts.list.useQuery({ platform: "X" });
+  const utils = trpc.useUtils();
 
   const totalAccounts = (ytChannels?.length ?? 0) + (igAccounts?.length ?? 0) + (xAccounts?.length ?? 0);
+
+  // Mark all unseen videos as seen when this page is opened — clears the sidebar badge
+  const markSeen = trpc.channels.markSeen.useMutation({
+    onSuccess: () => utils.channels.unseenCount.invalidate(),
+  });
+  useEffect(() => { markSeen.mutate(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">

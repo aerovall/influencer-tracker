@@ -698,3 +698,28 @@ export async function insertSocialPostSnapshot(data: {
     .values(data)
     .onDuplicateKeyUpdate({ set: { likes: data.likes ?? 0, comments: data.comments ?? 0, retweets: data.retweets ?? 0 } });
 }
+
+// ─── Unseen Video Badge Helpers ───────────────────────────────────────────────
+/**
+ * Returns the count of newly-discovered videos that the user hasn't seen yet.
+ * A video is "unseen" when isSeen = false (set by channelEngine on new discovery).
+ */
+export async function getUnseenVideoCount(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(videos)
+    .where(and(eq(videos.isSeen, false), eq(videos.isActive, true)));
+  return Number(rows[0]?.count ?? 0);
+}
+
+/**
+ * Marks all unseen videos as seen (clears the badge).
+ * Called when the user opens the Channels page.
+ */
+export async function markAllVideosSeen(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(videos).set({ isSeen: true }).where(eq(videos.isSeen, false));
+}

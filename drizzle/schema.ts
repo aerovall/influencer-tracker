@@ -92,9 +92,9 @@ export const videos = mysqlTable("videos", {
   thumbnailUrl: text("thumbnailUrl"),
   durationSeconds: int("durationSeconds"),
   isActive: boolean("isActive").default(true).notNull(),
+  isSeen: boolean("isSeen").default(false).notNull(),  // false = newly discovered, unseen by user; true = user has visited Channels page since discovery
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
 export type Video = typeof videos.$inferSelect;
 export type InsertVideo = typeof videos.$inferInsert;
 

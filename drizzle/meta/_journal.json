@@ -29,6 +29,20 @@
       "when": 1778690336031,
       "tag": "0003_closed_mandarin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1778691477172,
+      "tag": "0004_gifted_franklin_richards",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1778691815740,
+      "tag": "0005_puzzling_harrier",
+      "breakpoints": true
     }
   ]
 }

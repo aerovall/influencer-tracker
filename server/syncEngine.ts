@@ -96,6 +96,7 @@ export async function runVideoDiscovery(): Promise<{ processed: number; errors: 
           dateAdded: todayStr(),
           thumbnailUrl: video.thumbnailUrl,
           durationSeconds: video.durationSeconds,
+          isSeen: false,  // triggers the Channels nav badge
         });
         processed++;
       }
@@ -425,6 +426,7 @@ export async function runChannelSync(): Promise<{ newVideos: number; updatedStat
             thumbnailUrl: stats?.thumbnailUrl ?? upload.thumbnailUrl,
             durationSeconds: stats?.durationSeconds ?? upload.durationSeconds,
             isActive: true,
+            isSeen: false,  // triggers the Channels nav badge
           });
           newVideos++;
         }

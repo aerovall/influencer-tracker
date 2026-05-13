@@ -104,6 +104,14 @@ vi.mock("./db", () => ({
   updateChannelLastChecked: vi.fn().mockResolvedValue(undefined),
   deleteChannel: vi.fn().mockResolvedValue(undefined),
   getActiveChannels: vi.fn().mockResolvedValue([]),
+  getUnseenVideoCount: vi.fn().mockResolvedValue(3),
+  markAllVideosSeen: vi.fn().mockResolvedValue(undefined),
+  // Social account helpers
+  upsertSocialAccount: vi.fn().mockResolvedValue(undefined),
+  getAllSocialAccounts: vi.fn().mockResolvedValue([]),
+  getSocialAccountById: vi.fn().mockResolvedValue(null),
+  deleteSocialAccount: vi.fn().mockResolvedValue(undefined),
+  getLatestViewCountByVideoId: vi.fn().mockResolvedValue(null),
 }));
 
 // ─── Mock syncEngine ──────────────────────────────────────────────────────────
@@ -513,5 +521,25 @@ describe("channels.getWithVideos", () => {
     expect(result.channel).toBeDefined();
     expect(result.channel.channelId).toBe("UCtest123456789");
     expect(Array.isArray(result.videos)).toBe(true);
+  });
+});
+
+describe("channels.unseenCount", () => {
+  it("returns the count of unseen new videos", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.channels.unseenCount();
+    expect(result).toHaveProperty("count");
+    expect(result.count).toBe(3); // matches mock: getUnseenVideoCount returns 3
+  });
+});
+
+describe("channels.markSeen", () => {
+  it("marks all videos as seen and returns success", async () => {
+    const ctx = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.channels.markSeen();
+    expect(result).toHaveProperty("success");
+    expect(result.success).toBe(true);
   });
 });

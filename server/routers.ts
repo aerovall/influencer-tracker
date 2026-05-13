@@ -544,6 +544,7 @@ const channelsRouter = router({
           thumbnailUrl: stats?.thumbnailUrl ?? upload.thumbnailUrl,
           durationSeconds: stats?.durationSeconds ?? upload.durationSeconds,
           isActive: true,
+          isSeen: false,  // triggers the Channels nav badge
         });
         // Snapshot initial view count
         const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
@@ -611,6 +612,7 @@ const channelsRouter = router({
             thumbnailUrl: stats?.thumbnailUrl ?? upload.thumbnailUrl,
             durationSeconds: stats?.durationSeconds ?? upload.durationSeconds,
             isActive: true,
+            isSeen: false,  // triggers the Channels nav badge
           });
           newVideos++;
         }
@@ -656,6 +658,17 @@ const channelsRouter = router({
       await deleteChannel(input.channelId);
       return { success: true };
     }),
+  /** Returns the count of newly-discovered videos not yet seen by the user. */
+  unseenCount: protectedProcedure.query(async () => {
+    const { getUnseenVideoCount } = await import("./db");
+    return { count: await getUnseenVideoCount() };
+  }),
+  /** Marks all unseen videos as seen — clears the badge. */
+  markSeen: protectedProcedure.mutation(async () => {
+    const { markAllVideosSeen } = await import("./db");
+    await markAllVideosSeen();
+    return { success: true };
+  }),
 });
 
 // ─── Social Accounts Router ─────────────────────────────────────────────────

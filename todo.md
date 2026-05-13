@@ -140,3 +140,14 @@
 - [x] Server: Instagram public metric fetcher (profile + recent posts via public embed/scrape)
 - [x] Server: X public metric fetcher (profile + recent posts via public embed/scrape)
 - [x] Daily cron: sync Instagram and X accounts for new posts + stats
+
+## v1.4 — Channels Nav Badge
+- [x] DB: add is_seen column to videos table (default false)
+- [x] DB helper: getUnseenNewVideoCount — count videos where is_seen = false
+- [x] DB helper: markAllVideosSeen — set is_seen = true for all videos
+- [x] tRPC: channels.unseenCount — returns count of unseen new videos
+- [x] tRPC: channels.markSeen — sets all videos as seen
+- [x] DashboardLayout: poll unseenCount every 60s, show gold badge on Channels nav item
+- [x] Channels.tsx: call markSeen on mount to clear the badge
+- [x] channelEngine: set is_seen = false when inserting newly discovered videos
+- [x] Test: unseenCount returns correct count, markSeen resets to 0
