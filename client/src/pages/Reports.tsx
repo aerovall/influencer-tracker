@@ -69,10 +69,24 @@ function renderMarkdown(md: string): React.ReactNode[] {
         </div>
       );
     } else if (line.startsWith("  • ") || line.startsWith("  - ")) {
+      const rawText = line.slice(4);
+      const isBest = rawText.startsWith("★ BEST");
+      const displayText = isBest ? rawText.slice(7) : rawText; // strip "★ BEST "
+      // Highlight **views** in bold amber, and pipe-separated likes/comments as small chips
+      const htmlText = displayText
+        .replace(/\*\*([^*]+)\*\*/g, '<strong class="text-amber-300 font-bold">$1</strong>')
+        .replace(/\|\s*([\d,]+)\s*likes/g, '&nbsp;<span class="text-pink-400/80 text-[10px]">♥ $1</span>')
+        .replace(/\|\s*([\d,]+)\s*comments/g, '&nbsp;<span class="text-blue-400/80 text-[10px]">␥ $1</span>');
       nodes.push(
-        <div key={i} className="flex gap-2 text-xs text-muted-foreground pl-4 py-0.5">
-          <span className="text-amber-400/40 shrink-0">›</span>
-          <span>{line.slice(4)}</span>
+        <div key={i} className={`flex gap-2 text-xs pl-4 py-0.5 rounded ${
+          isBest
+            ? "text-white font-semibold bg-white/5 border-l-2 border-amber-400 pl-3"
+            : "text-muted-foreground"
+        }`}>
+          <span className={isBest ? "text-amber-400 shrink-0" : "text-amber-400/40 shrink-0"}>
+            {isBest ? "★" : "›"}
+          </span>
+          <span dangerouslySetInnerHTML={{ __html: htmlText }} />
         </div>
       );
     } else if (line.startsWith("**") && line.includes(":**")) {
@@ -198,10 +212,6 @@ function ReportDetailDialog({ reportId, onClose }: { reportId: number | null; on
               icon={<Video className="h-3.5 w-3.5 text-emerald-400" />}
               label="Active Videos" value={report.totalVideos ?? 0}
               accent="border-emerald-500/20 bg-emerald-500/5" />
-            <StatChip
-              icon={<TrendingUp className="h-3.5 w-3.5 text-violet-400" />}
-              label="Avg Engagement" value={`${Number(report.avgEngagementRate ?? 0).toFixed(2)}%`}
-              accent="border-violet-500/20 bg-violet-500/5" />
             <StatChip
               icon={<AlertTriangle className="h-3.5 w-3.5 text-amber-400" />}
               label="Alerts Triggered" value={report.alertsTriggered ?? 0}

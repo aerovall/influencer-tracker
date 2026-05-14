@@ -337,16 +337,26 @@ export async function generateDailyReport(): Promise<void> {
 
   const perChannelSections = Array.from(channelMap.entries())
     .map(([channelName, data]) => {
-      const top5 = data.videos
-        .sort((a, b) => Number(b.viewCount) - Number(a.viewCount))
+      const sorted = data.videos
+        .sort((a, b) => Number(b.viewCount) - Number(a.viewCount));
+      // Mark the best video among the last 10 by views
+      const bestVideoId = sorted[0]?.videoId ?? null;
+      const top5 = sorted
         .slice(0, 5)
-        .map((v) => `  • ${v.title}: ${Number(v.viewCount).toLocaleString()} views`)
+        .map((v) => {
+          const isBest = v.videoId === bestVideoId;
+          const views = Number(v.viewCount).toLocaleString();
+          const likes = Number(v.likes ?? 0).toLocaleString();
+          const comments = Number(v.comments ?? 0).toLocaleString();
+          const marker = isBest ? "★ BEST" : "  ";
+          return `  ${marker} ${v.title}: **${views} views** | ${likes} likes | ${comments} comments`;
+        })
         .join("\n");
       const sponsorships = shillsByChannel.get(channelName) ?? 0;
       return `### ${channelName}
 - Views: ${data.views.toLocaleString()}  |  Likes: ${data.likes.toLocaleString()}  |  Comments: ${data.comments.toLocaleString()}  |  Sponsorships: ${sponsorships}
 **Top 5 Videos:**
-${top5 || "  No view data today."}`.trim();
+${top5 || "  No view data today."}`;
     })
     .join("\n\n");
 
@@ -363,7 +373,6 @@ ${top5 || "  No view data today."}`.trim();
 **Total Views Today:** ${totalViewsToday.toLocaleString()}
 **Total Likes Today:** ${totalLikesToday.toLocaleString()}
 **Total Comments Today:** ${totalCommentsToday.toLocaleString()}
-**Average Engagement Rate:** ${Number(avgEng).toFixed(2)}%
 **Unread Alerts:** ${alertCount}
 
 ### Top 5 Videos by Views (Overall)

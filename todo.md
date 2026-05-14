@@ -297,3 +297,11 @@
 
 ## v2.17 — Subscriber Count Display Fix
 - [x] Fix: Channels page subscriber count shows raw number (e.g. 299) instead of formatted value (299K)
+
+## v2.18 — Daily Report Improvements + Excel Report Sheet
+- [x] Report: remove Avg Engagement stat chip from header
+- [x] Report: add likes and comments per video in per-channel video list
+- [x] Report: highlight view count on each video row (coloured/bold)
+- [x] Report: make the best video (highest views in last 10) stand out with white bold text
+- [x] Report: update generateDailyReport to include likes/comments per video and isBest flag
+- [x] Excel: add "Daily Report" sheet to export with channel breakdown, top videos, likes/comments

@@ -630,7 +630,7 @@ const analyticsRouter = router({
     .query(async ({ input }) => {
     const dateFrom = input?.dateFrom;
     const dateTo   = input?.dateTo;
-    const [allVideos, allViewCounts, allShills, allChannels, stats, totalViews, avgEng] = await Promise.all([
+    const [allVideos, allViewCounts, allShills, allChannels, stats, totalViews, avgEng, allReports] = await Promise.all([
       getAllVideos(dateFrom || dateTo ? { dateFrom, dateTo } : undefined),
       getAllViewCounts({ dateFrom, dateTo }),
       getAllShills(),
@@ -638,6 +638,7 @@ const analyticsRouter = router({
       getVideoStats(),
       getTotalViewsAllTime(),
       getAvgEngagementRate(),
+      getAllReports(10),
     ]);
 
     // Aggregate per-channel stats for the Summary sheet
@@ -682,6 +683,7 @@ const analyticsRouter = router({
       viewCounts: allViewCounts,
       sponsorships: allShills,
       channels: allChannels,
+      reports: allReports,
     };
   }),
 });

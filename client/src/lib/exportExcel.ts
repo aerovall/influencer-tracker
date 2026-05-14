@@ -705,6 +705,187 @@ function buildTopVideosSheet(videos: any[]): XLSX.WorkSheet {
   return ws;
 }
 
+// ─── Daily Reports sheet ────────────────────────────────────────────────────
+
+function buildDailyReportsSheet(reports: any[]): XLSX.WorkSheet {
+  const accent = "1A3A5C"; // deep slate-blue for reports
+
+  // Only include daily reports, sorted newest first
+  const dailyReports = [...reports]
+    .filter((r) => r.type === "daily")
+    .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+
+  const rows: any[][] = [];
+
+  // Title row
+  rows.push(["DAILY REPORTS — CHANNEL BREAKDOWN", "", "", "", "", "", ""]);
+  rows.push([`Exported: ${fmtDate(new Date())}`, "", "", "", "", "", ""]);
+  rows.push(["", "", "", "", "", "", ""]);
+
+  const COLS = 7;
+
+  for (const report of dailyReports) {
+    const reportStartRow = rows.length;
+
+    // Report header row
+    rows.push([
+      `📅 ${report.title ?? "Daily Report"}`,
+      `Period: ${report.periodStart ?? ""} → ${report.periodEnd ?? ""}`,
+      "",
+      `Views: ${(report.totalViews ?? 0).toLocaleString()}`,
+      `Videos: ${report.totalVideos ?? 0}`,
+      `Alerts: ${report.alertsTriggered ?? 0}`,
+      `Generated: ${fmtDate(report.createdAt)}`,
+    ]);
+
+    // Parse per-channel data from report content
+    const content: string = report.content ?? "";
+    const channelBlocks = content.split(/\n(?=### )/);
+
+    // Channel table header
+    rows.push(["Channel", "Views", "Likes", "Comments", "Sponsorships", "Best Video", "Best Video Views"]);
+    const tableHeaderRow = rows.length - 1;
+
+    let channelIdx = 0;
+    for (const block of channelBlocks) {
+      if (!block.startsWith("### ")) continue;
+      const lines = block.split("\n");
+      const channelName = lines[0]?.slice(4).trim() ?? "";
+
+      // Parse stats line: "- Views: X  |  Likes: Y  |  Comments: Z  |  Sponsorships: N"
+      const statsLine = lines.find((l) => l.startsWith("- Views:")) ?? "";
+      const viewsMatch = statsLine.match(/Views:\s*([\d,]+)/);
+      const likesMatch = statsLine.match(/Likes:\s*([\d,]+)/);
+      const commentsMatch = statsLine.match(/Comments:\s*([\d,]+)/);
+      const sponsorshipsMatch = statsLine.match(/Sponsorships:\s*([\d,]+)/);
+
+      const chViews = viewsMatch ? parseInt(viewsMatch[1].replace(/,/g, "")) : 0;
+      const chLikes = likesMatch ? parseInt(likesMatch[1].replace(/,/g, "")) : 0;
+      const chComments = commentsMatch ? parseInt(commentsMatch[1].replace(/,/g, "")) : 0;
+      const chSponsors = sponsorshipsMatch ? parseInt(sponsorshipsMatch[1].replace(/,/g, "")) : 0;
+
+      // Find best video (line starting with "  ★ BEST")
+      const bestLine = lines.find((l) => l.includes("★ BEST")) ?? "";
+      let bestTitle = "";
+      let bestViews = 0;
+      if (bestLine) {
+        const titleMatch = bestLine.replace(/^\s*★ BEST\s*/, "").match(/^(.+?):\s*\*\*([\d,]+)\s*views/);
+        if (titleMatch) {
+          bestTitle = titleMatch[1].trim();
+          bestViews = parseInt(titleMatch[2].replace(/,/g, ""));
+        }
+      }
+
+      rows.push([channelName, chViews, chLikes, chComments, chSponsors, bestTitle, bestViews]);
+      channelIdx++;
+    }
+
+    // Spacer between reports
+    rows.push(["", "", "", "", "", "", ""]);
+
+    // Apply styles for this report block
+    const ws_temp = rows; // we'll style after building the full sheet
+    void ws_temp; void reportStartRow; void tableHeaderRow;
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // ── Title rows ───────────────────────────────────────────────────────────────
+  const titleAddr = XLSX.utils.encode_cell({ r: 0, c: 0 });
+  if (ws[titleAddr]) ws[titleAddr].s = {
+    font:      { bold: true, sz: 16, name: "Calibri", color: { rgb: WHITE } },
+    fill:      { fgColor: { rgb: accent }, patternType: "solid" },
+    alignment: { horizontal: "left", vertical: "center" },
+  };
+  const subtitleAddr = XLSX.utils.encode_cell({ r: 1, c: 0 });
+  if (ws[subtitleAddr]) ws[subtitleAddr].s = subTitleStyle();
+
+  // ── Style all data rows ──────────────────────────────────────────────────────
+  let currentRow = 3;
+  let reportBlockIdx = 0;
+  for (const report of dailyReports) {
+    // Report header row (spans full width)
+    for (let c = 0; c < COLS; c++) {
+      const addr = XLSX.utils.encode_cell({ r: currentRow, c });
+      if (!ws[addr]) ws[addr] = { t: "z" };
+      ws[addr].s = {
+        font:      { bold: true, sz: 11, name: "Calibri", color: { rgb: WHITE } },
+        fill:      { fgColor: { rgb: accent }, patternType: "solid" },
+        alignment: { horizontal: c === 0 ? "left" : "center", vertical: "center" },
+        border: { bottom: { style: "medium", color: { rgb: accent } } },
+      };
+    }
+    currentRow++;
+
+    // Channel table header row
+    for (let c = 0; c < COLS; c++) {
+      const addr = XLSX.utils.encode_cell({ r: currentRow, c });
+      if (!ws[addr]) ws[addr] = { t: "z" };
+      ws[addr].s = headerStyle(accent);
+    }
+    currentRow++;
+
+    // Parse channel count for this report
+    const content: string = report.content ?? "";
+    const channelBlocks = content.split(/\n(?=### )/).filter((b) => b.startsWith("### "));
+    let chIdx = 0;
+    for (const block of channelBlocks) {
+      const lines = block.split("\n");
+      const channelName = lines[0]?.slice(4).trim() ?? "";
+      const chAccent = CHANNEL_ACCENTS[chIdx % CHANNEL_ACCENTS.length];
+
+      // Best video views for heat-map
+      const bestLine = lines.find((l) => l.includes("★ BEST")) ?? "";
+      let bestViews = 0;
+      if (bestLine) {
+        const m = bestLine.match(/\*\*([\d,]+)\s*views/);
+        if (m) bestViews = parseInt(m[1].replace(/,/g, ""));
+      }
+
+      for (let c = 0; c < COLS; c++) {
+        const addr = XLSX.utils.encode_cell({ r: currentRow, c });
+        if (!ws[addr]) ws[addr] = { t: "z" };
+        const isNumeric = [1, 2, 3, 4, 6].includes(c);
+        const align: "left" | "right" = isNumeric ? "right" : "left";
+        if (c === 0) {
+          // Channel name — accent colour
+          ws[addr].s = {
+            font:      { bold: true, sz: 10, name: "Calibri", color: { rgb: WHITE } },
+            fill:      { fgColor: { rgb: chAccent }, patternType: "solid" },
+            alignment: { horizontal: "left", vertical: "center" },
+            border: { top: { style: "thin", color: { rgb: BORDER_CLR } }, bottom: { style: "thin", color: { rgb: BORDER_CLR } }, left: { style: "thin", color: { rgb: BORDER_CLR } }, right: { style: "thin", color: { rgb: BORDER_CLR } } },
+          };
+        } else if (c === 6 && bestViews > 0) {
+          // Best video views — gold highlight
+          ws[addr].s = dataStyle(chIdx, "right", HEAT.top1.bg, HEAT.top1.text);
+          if (typeof ws[addr].v === "number") ws[addr].z = "#,##0";
+        } else {
+          ws[addr].s = dataStyle(chIdx, align);
+          if (isNumeric && typeof ws[addr].v === "number") ws[addr].z = "#,##0";
+        }
+      }
+      chIdx++;
+      currentRow++;
+    }
+
+    // Spacer row
+    currentRow++;
+    reportBlockIdx++;
+  }
+  void reportBlockIdx;
+
+  // Merges for title rows
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: COLS - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: COLS - 1 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: COLS - 1 } },
+  ];
+
+  setCols(ws, [28, 14, 12, 12, 14, 52, 16]);
+  ws["!rows"] = [{ hpt: 30 }, { hpt: 16 }, { hpt: 8 }];
+  return ws;
+}
+
 // ─── Main export function ─────────────────────────────────────────────────────
 
 export function downloadDashboardExcel(data: any) {
@@ -718,10 +899,13 @@ export function downloadDashboardExcel(data: any) {
 
   XLSX.utils.book_append_sheet(wb, buildSummarySheet(data),                        "📊 Summary");
   XLSX.utils.book_append_sheet(wb, buildTopVideosSheet(data.videos ?? []),          "🏆 Top Videos");
-  XLSX.utils.book_append_sheet(wb, buildVideosSheet(data.videos ?? []),             "🎬 All Videos");
+  XLSX.utils.book_append_sheet(wb, buildVideosSheet(data.videos ?? []),             "🎥 All Videos");
   XLSX.utils.book_append_sheet(wb, buildViewCountsSheet(data.viewCounts ?? []),     "📈 View Counts");
   XLSX.utils.book_append_sheet(wb, buildSponsorshipsSheet(data.sponsorships ?? []), "💰 Sponsorships");
   XLSX.utils.book_append_sheet(wb, buildChannelsSheet(data.channels ?? []),         "📡 Channels");
+  if ((data.reports ?? []).length > 0) {
+    XLSX.utils.book_append_sheet(wb, buildDailyReportsSheet(data.reports ?? []),    "📅 Daily Reports");
+  }
 
   const dateStr = new Date().toISOString().split("T")[0];
   XLSX.writeFile(wb, `influencer-tracker-${dateStr}.xlsx`, { cellStyles: true });
