@@ -294,3 +294,6 @@
 - [x] Frontend: build ExportExcelDialog component with preset buttons (Last 7d, 30d, 90d, All Time) and custom date range picker
 - [x] Frontend: wire date range selection to exportStats query and downloadDashboardExcel
 - [x] Frontend: replace plain Export Excel button on Dashboard with dialog trigger
+
+## v2.17 — Subscriber Count Display Fix
+- [x] Fix: Channels page subscriber count shows raw number (e.g. 299) instead of formatted value (299K)

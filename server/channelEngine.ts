@@ -98,10 +98,17 @@ export function toRawVideoId(dbId: string): string {
 /** Parse a subscriber count string like "1.2M" → number. */
 function parseSubscriberCount(raw: string | undefined | null): number {
   if (!raw) return 0;
+  // Strip commas and trim, then extract the numeric+suffix token
+  // e.g. "232K subscribers" → "232K", "1.2M subscribers" → "1.2M", "299,000" → "299000"
   const s = raw.replace(/,/g, "").trim();
-  if (s.endsWith("M")) return Math.round(parseFloat(s) * 1_000_000);
-  if (s.endsWith("K")) return Math.round(parseFloat(s) * 1_000);
-  return parseInt(s, 10) || 0;
+  const match = s.match(/([\d.]+)\s*([KkMmBb])?/);
+  if (!match) return 0;
+  const num = parseFloat(match[1]);
+  const suffix = (match[2] ?? "").toUpperCase();
+  if (suffix === "B") return Math.round(num * 1_000_000_000);
+  if (suffix === "M") return Math.round(num * 1_000_000);
+  if (suffix === "K") return Math.round(num * 1_000);
+  return Math.round(num) || 0;
 }
 
 /** Format a Date to YYYY-MM-DD. */
