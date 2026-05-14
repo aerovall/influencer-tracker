@@ -245,3 +245,9 @@
 - [x] Build Excel file on the frontend using SheetJS (5 sheets: Summary, Videos, View Counts, Sponsorships, Channels)
 - [x] Add Export to Excel button on Dashboard page header
 - [x] Format cells: header row bold/colored, date columns formatted, column widths set per sheet
+
+## v2.10 — Analytics Per-Channel Bar Chart
+- [x] SQL: back-fill influencerName from channelName for all existing videos where influencerName IS NULL and channelId is set
+- [x] Add tRPC analytics.viewsByChannel query returning total views per channel name (computed client-side from trends data)
+- [x] Replace "Views by Influencer" area/line chart with horizontal bar chart (views per channel) showing Views, Likes, Comments
+- [x] Keep the All Influencers filter dropdown working with real channel names

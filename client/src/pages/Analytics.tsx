@@ -4,8 +4,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfluencerBadge, PlatformBadge, formatNumber, formatEngagement } from "@/components/Badges";
 import {
-  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend, AreaChart, Area,
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend, Cell,
 } from "recharts";
 import { BarChart3, TrendingUp, Eye, ThumbsUp } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -62,17 +62,36 @@ export default function Analytics() {
     });
   }, [trends, influencerFilter, platformFilter]);
 
-  // Daily views by influencer
-  const viewsByInfluencer = useMemo(() => {
-    const byDate = new Map<string, Record<string, number>>();
+  // Total views per channel (for bar chart)
+  // Strategy: take the MAX snapshot per video (latest/peak), then sum across videos per channel.
+  // This avoids double-counting daily snapshots.
+  const viewsByChannel = useMemo(() => {
+    // Step 1: for each videoId, find the max viewCount, max likes, max comments
+    const perVideo = new Map<string, { channel: string; views: number; likes: number; comments: number }>();
     for (const row of filteredTrends) {
-      if (!byDate.has(row.date)) byDate.set(row.date, {});
-      const entry = byDate.get(row.date)!;
-      entry[row.influencerName] = (entry[row.influencerName] ?? 0) + Number(row.viewCount);
+      const name = row.influencerName?.trim() || "Unknown";
+      const vid = row.videoId;
+      if (!perVideo.has(vid)) {
+        perVideo.set(vid, { channel: name, views: 0, likes: 0, comments: 0 });
+      }
+      const entry = perVideo.get(vid)!;
+      entry.channel = name; // keep latest (should be consistent)
+      entry.views = Math.max(entry.views, Number(row.viewCount ?? 0));
+      entry.likes = Math.max(entry.likes, Number(row.likes ?? 0));
+      entry.comments = Math.max(entry.comments, Number(row.comments ?? 0));
     }
-    return Array.from(byDate.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, vals]) => ({ date: date.slice(5), ...vals }));
+    // Step 2: aggregate per channel
+    const totals = new Map<string, { views: number; likes: number; comments: number }>();
+    for (const { channel, views, likes, comments } of Array.from(perVideo.values())) {
+      if (!totals.has(channel)) totals.set(channel, { views: 0, likes: 0, comments: 0 });
+      const t = totals.get(channel)!;
+      t.views += views;
+      t.likes += likes;
+      t.comments += comments;
+    }
+    return Array.from(totals.entries())
+      .map(([channel, stats]) => ({ channel, ...stats }))
+      .sort((a, b) => b.views - a.views);
   }, [filteredTrends]);
 
   // Daily views by platform
@@ -192,41 +211,53 @@ export default function Analytics() {
         ))}
       </div>
 
-      {/* Views by Influencer */}
+      {/* Views by Channel — horizontal bar chart */}
       <Card className="border-border/50 bg-card/80">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base font-semibold">Views by Influencer</CardTitle>
+          <CardTitle className="text-base font-semibold">Views by Channel</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? <Skeleton className="h-56 w-full" /> : viewsByInfluencer.length === 0 ? (
+          {isLoading ? <Skeleton className="h-56 w-full" /> : viewsByChannel.length === 0 ? (
             <div className="h-56 flex items-center justify-center text-muted-foreground text-sm">No data for this period.</div>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={viewsByInfluencer}>
-                <defs>
-                  {channelNames.map((name) => (
-                    <linearGradient key={name} id={`grad-${name}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={getChannelColor(name, channelNames)} stopOpacity={0.3} />
-                      <stop offset="95%" stopColor={getChannelColor(name, channelNames)} stopOpacity={0} />
-                    </linearGradient>
+            <ResponsiveContainer width="100%" height={Math.max(180, viewsByChannel.length * 56 + 40)}>
+              <BarChart
+                data={viewsByChannel}
+                layout="vertical"
+                margin={{ top: 4, right: 24, left: 8, bottom: 4 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.03 255)" horizontal={false} />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 11, fill: "oklch(0.60 0.02 255)" }}
+                  tickFormatter={formatNumber}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="channel"
+                  tick={{ fontSize: 12, fill: "oklch(0.85 0.02 255)", fontWeight: 500 }}
+                  width={110}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  {...TOOLTIP_STYLE}
+                  formatter={(v: number, name: string) => [formatNumber(v), name === "views" ? "Views" : name === "likes" ? "Likes" : "Comments"]}
+                  cursor={{ fill: "oklch(0.20 0.03 255)" }}
+                />
+                <Legend
+                  formatter={(value) => value === "views" ? "Views" : value === "likes" ? "Likes" : "Comments"}
+                />
+                <Bar dataKey="views" name="views" radius={[0, 4, 4, 0]} maxBarSize={32}>
+                  {viewsByChannel.map((entry, idx) => (
+                    <Cell key={entry.channel} fill={getChannelColor(entry.channel, viewsByChannel.map(c => c.channel))} />
                   ))}
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.03 255)" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: "oklch(0.60 0.02 255)" }} />
-                <YAxis tick={{ fontSize: 11, fill: "oklch(0.60 0.02 255)" }} tickFormatter={formatNumber} />
-                <Tooltip {...TOOLTIP_STYLE} formatter={(v: number) => [formatNumber(v), ""]} />
-                <Legend />
-                {channelNames.map((name) => (
-                  <Area
-                    key={name}
-                    type="monotone"
-                    dataKey={name}
-                    stroke={getChannelColor(name, channelNames)}
-                    fill={`url(#grad-${name})`}
-                    strokeWidth={2}
-                  />
-                ))}
-              </AreaChart>
+                </Bar>
+                <Bar dataKey="likes" name="likes" fill="oklch(0.65 0.18 200)" radius={[0, 4, 4, 0]} maxBarSize={32} />
+                <Bar dataKey="comments" name="comments" fill="oklch(0.70 0.18 150)" radius={[0, 4, 4, 0]} maxBarSize={32} />
+              </BarChart>
             </ResponsiveContainer>
           )}
         </CardContent>

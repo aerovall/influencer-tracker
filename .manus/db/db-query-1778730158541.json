@@ -1,0 +1,25 @@
+{
+  "query": "SELECT influencer_name, channel_id, COUNT(*) as cnt FROM videos GROUP BY influencer_name, channel_id LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute SELECT influencer_name, channel_id, COUNT(*) as cnt FROM videos GROUP BY influencer_name, channel_id LIMIT 10;",
+  "rows": [
+    {
+      "influencer_name": "NoBs",
+      "channel_id": "NULL",
+      "cnt": "1"
+    },
+    {
+      "influencer_name": "Levi",
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ",
+      "cnt": "30"
+    },
+    {
+      "influencer_name": "Conor Kenny",
+      "channel_id": "UCJQY1CkwtFNfJfIzROc8KiA",
+      "cnt": "30"
+    }
+  ],
+  "messages": [],
+  "stdout": "influencer_name\tchannel_id\tcnt\nNoBs\tNULL\t1\nLevi\tUC0SesdSOSgLERIZSj_FC8wQ\t30\nConor Kenny\tUCJQY1CkwtFNfJfIzROc8KiA\t30\n",
+  "stderr": "",
+  "execution_time_ms": 1797
+}
