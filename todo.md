@@ -238,3 +238,10 @@
 - [x] Backend: tRPC videos.startChannelScrape + videos.channelScrapeStatus — per-channel background scrape with polling
 - [x] UI: add "Scrape" button per channel card in Channels.tsx (next to Sync button)
 - [x] UI: show per-channel scrape progress bar and video count while running
+
+## v2.9 — Dashboard Excel Export
+- [x] Install xlsx (SheetJS) npm package
+- [x] Add tRPC analytics.exportStats query that returns all data needed for the Excel file
+- [x] Build Excel file on the frontend using SheetJS (5 sheets: Summary, Videos, View Counts, Sponsorships, Channels)
+- [x] Add Export to Excel button on Dashboard page header
+- [x] Format cells: header row bold/colored, date columns formatted, column widths set per sheet

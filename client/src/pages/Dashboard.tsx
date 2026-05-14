@@ -7,9 +7,11 @@ import { InfluencerBadge, PlatformBadge, AlertTypeBadge, formatNumber, formatEng
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
-import { Activity, AlertTriangle, Eye, TrendingUp, Video, Zap } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Activity, AlertTriangle, Eye, TrendingUp, Video, Zap, Download } from "lucide-react";
+import { useMemo, useState, useCallback } from "react";
 import { useLocation } from "wouter";
+import { downloadDashboardExcel } from "@/lib/exportExcel";
+import { toast } from "sonner";
 
 // Dynamic color palette for any number of channels
 const PALETTE = [
@@ -56,11 +58,25 @@ export default function Dashboard() {
   const { data: trends, isLoading: trendsLoading } = trpc.analytics.trends.useQuery({ days: 30 });
   const { data: alerts, isLoading: alertsLoading } = trpc.alerts.list.useQuery({ limit: 8 });
   const { data: recentVideos } = trpc.videos.list.useQuery({});
+  const [exporting, setExporting] = useState(false);
 
   const markRead = trpc.alerts.markRead.useMutation({
     onSuccess: () => utils.alerts.list.invalidate(),
   });
   const utils = trpc.useUtils();
+
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const data = await utils.analytics.exportStats.fetch();
+      downloadDashboardExcel(data);
+      toast.success("Excel file downloaded!");
+    } catch (err: any) {
+      toast.error(`Export failed: ${err?.message ?? "Unknown error"}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [utils]);
 
   // Build chart data: daily total views grouped by influencer — dynamic channel names
   const { chartData, channelNames } = useMemo(() => {
@@ -91,11 +107,23 @@ export default function Dashboard() {
   return (
     <div className="space-y-8 p-2">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Real-time overview of all influencer activity across platforms
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Real-time overview of all influencer activity across platforms
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExport}
+          disabled={exporting}
+          className="shrink-0 gap-2 border-border/60 hover:bg-primary/10"
+        >
+          <Download className="h-4 w-4" />
+          {exporting ? "Exporting…" : "Export Excel"}
+        </Button>
       </div>
 
       {/* KPI Cards */}

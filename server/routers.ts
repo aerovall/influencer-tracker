@@ -619,9 +619,37 @@ const analyticsRouter = router({
       byPlatform: stats.byPlatform,
     };
   }),
-});
 
-// ─── Shills Router ────────────────────────────────────────────────────────────
+  /** Returns all data needed to build the Dashboard Excel export. */
+  exportStats: protectedProcedure.query(async () => {
+    const [allVideos, allViewCounts, allShills, allChannels, stats, totalViews, avgEng] = await Promise.all([
+      getAllVideos(),
+      getAllViewCounts(),
+      getAllShills(),
+      getAllChannels(),
+      getVideoStats(),
+      getTotalViewsAllTime(),
+      getAvgEngagementRate(),
+    ]);
+    return {
+      exportedAt: new Date().toISOString(),
+      summary: {
+        totalVideos: stats.total,
+        totalViews,
+        avgEngagementRate: Number(avgEng).toFixed(2),
+        totalChannels: allChannels.length,
+        totalSponsorships: allShills.length,
+        byInfluencer: stats.byInfluencer,
+        byPlatform: stats.byPlatform,
+      },
+      videos: allVideos,
+      viewCounts: allViewCounts,
+      sponsorships: allShills,
+      channels: allChannels,
+    };
+  }),
+});
+// ─── Shills Routerr ────────────────────────────────────────────────────────────
 const shillsRouter = router({
   list: protectedProcedure
     .input(z.object({ videoId: z.string().optional(), brand: z.string().optional() }).optional())
