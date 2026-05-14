@@ -300,7 +300,15 @@ export async function generateDailyReport(): Promise<void> {
   const stats = await getVideoStats();
   const avgEng = await getAvgEngagementRate();
   const alertCount = await getUnreadAlertCount();
-  const trends = await getViewCountTrends(1);
+  const rawTrends = await getViewCountTrends(1);
+
+  // Deduplicate: keep only the latest row per videoId (getViewCountTrends(1) returns yesterday+today)
+  const latestByVideo = new Map<string, typeof rawTrends[number]>();
+  for (const t of rawTrends) {
+    const existing = latestByVideo.get(t.videoId);
+    if (!existing || t.date > existing.date) latestByVideo.set(t.videoId, t);
+  }
+  const trends = Array.from(latestByVideo.values());
 
   const totalViewsToday = trends.reduce((sum, t) => sum + Number(t.viewCount), 0);
   const totalLikesToday = trends.reduce((sum, t) => sum + Number(t.likes ?? 0), 0);
@@ -396,8 +404,16 @@ export async function generateWeeklyReport(): Promise<void> {
 
   const stats = await getVideoStats();
   const avgEng = await getAvgEngagementRate();
-  const trends = await getViewCountTrends(7);
+  const rawTrendsWeekly = await getViewCountTrends(7);
   const alertCount = await getUnreadAlertCount();
+
+  // Deduplicate: keep only the latest row per videoId across the 7-day window
+  const latestByVideoWeekly = new Map<string, typeof rawTrendsWeekly[number]>();
+  for (const t of rawTrendsWeekly) {
+    const existing = latestByVideoWeekly.get(t.videoId);
+    if (!existing || t.date > existing.date) latestByVideoWeekly.set(t.videoId, t);
+  }
+  const trends = Array.from(latestByVideoWeekly.values());
 
   const totalViewsWeek = trends.reduce((sum, t) => sum + Number(t.viewCount), 0);
   const topVideos = trends

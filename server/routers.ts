@@ -632,6 +632,33 @@ const analyticsRouter = router({
       getTotalViewsAllTime(),
       getAvgEngagementRate(),
     ]);
+
+    // Aggregate per-channel stats for the Summary sheet
+    // Use latest view_count row per video to avoid double-counting multi-day snapshots
+    const latestByVideo = new Map<string, typeof allViewCounts[number]>();
+    for (const vc of allViewCounts) {
+      const existing = latestByVideo.get(vc.videoId);
+      if (!existing || vc.date > existing.date) latestByVideo.set(vc.videoId, vc);
+    }
+    const channelStatsMap = new Map<string, { totalViews: number; totalLikes: number; totalComments: number; totalSponsors: number }>();
+    for (const v of allVideos) {
+      const key = v.influencerName ?? "Unknown";
+      if (!channelStatsMap.has(key)) channelStatsMap.set(key, { totalViews: 0, totalLikes: 0, totalComments: 0, totalSponsors: 0 });
+      const vc = latestByVideo.get(v.videoId);
+      if (vc) {
+        const entry = channelStatsMap.get(key)!;
+        entry.totalViews += Number(vc.viewCount ?? 0);
+        entry.totalLikes += Number(vc.likes ?? 0);
+        entry.totalComments += Number(vc.comments ?? 0);
+      }
+    }
+    for (const s of allShills) {
+      const key = s.influencerName ?? "Unknown";
+      if (!channelStatsMap.has(key)) channelStatsMap.set(key, { totalViews: 0, totalLikes: 0, totalComments: 0, totalSponsors: 0 });
+      channelStatsMap.get(key)!.totalSponsors++;
+    }
+    const channelStats = Array.from(channelStatsMap.entries()).map(([channelName, cs]) => ({ channelName, ...cs }));
+
     return {
       exportedAt: new Date().toISOString(),
       summary: {
@@ -642,6 +669,7 @@ const analyticsRouter = router({
         totalSponsorships: allShills.length,
         byInfluencer: stats.byInfluencer,
         byPlatform: stats.byPlatform,
+        channelStats,
       },
       videos: allVideos,
       viewCounts: allViewCounts,

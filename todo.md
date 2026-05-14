@@ -268,6 +268,19 @@
 - [x] Remove "Avg Engagement" KPI card from Dashboard
 - [x] Fix: Snapshot Views (runViewCountSnapshot) uses insertViewCountPreserveScrape so scraped likes/comments are never overwritten with 0
 
+## v2.15 — Report Duplicate Fix + Excel Visual Enhancement
+- [x] Fix: generateDailyReport deduplicates getViewCountTrends(1) to latest row per video (was showing each video twice)
+- [x] Fix: generateWeeklyReport deduplicates getViewCountTrends(7) to latest row per video
+- [x] Excel: add "🏆 Top Videos" sheet — top 20 by views with gold/silver/bronze rank medals
+- [x] Excel: heat-map colour coding on Views, Likes, Comments columns (green/yellow/red by percentile)
+- [x] Excel: channel name cells get unique accent colour per channel across all sheets
+- [x] Excel: brand name cells get unique accent colour per brand in Sponsorships sheet
+- [x] Excel: subscriber count heat-map on Channels sheet
+- [x] Excel: "Views Bar" column on View Counts sheet (Unicode block bar chart)
+- [x] Excel: Summary sheet KPI row with 6 large coloured value cells
+- [x] Excel: Summary sheet Channel Performance table with per-channel views/likes/comments/sponsorships
+- [x] Backend: exportStats adds channelStats aggregation (totalViews/likes/comments/sponsorships per channel)
+
 ## v2.14 — Reports Visual Redesign + Delete
 - [x] Add deleteReport tRPC procedure and DB helper
 - [x] Redesign Reports page: newsletter-style layout, clean stat chips (remove Alerts/Avg Engagement, add Likes/Comments/Top Channel)
