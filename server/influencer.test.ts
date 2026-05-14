@@ -73,6 +73,7 @@ vi.mock("./db", () => ({
   insertSyncLog: vi.fn().mockResolvedValue(1),
   updateSyncLog: vi.fn().mockResolvedValue(undefined),
   insertViewCount: vi.fn().mockResolvedValue(undefined),
+  insertViewCountPreserveScrape: vi.fn().mockResolvedValue(undefined),
   insertAlertEvent: vi.fn().mockResolvedValue(undefined),
   insertReport: vi.fn().mockResolvedValue(undefined),
   getCredentialByKey: vi.fn().mockResolvedValue(null),

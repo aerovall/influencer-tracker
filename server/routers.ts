@@ -63,6 +63,7 @@ import {
   deleteSocialAccount,
   getCredentialByKey,
   getShillCountByVideoId,
+  insertViewCountPreserveScrape,
 } from "./db";
 import {
   generateDailyReport,
@@ -98,12 +99,33 @@ interface BulkScrapeJob {
 
 // Singleton job state — only one bulk scrape can run at a time
 let _bulkJob: BulkScrapeJob | null = null;
-
 function getBulkJob(): BulkScrapeJob {
   if (!_bulkJob) {
     _bulkJob = { jobId: "", status: "idle", total: 0, done: 0, currentVideoId: null, errors: [], results: [], startedAt: 0, finishedAt: null };
   }
   return _bulkJob!;
+}
+
+// ─── Per-channel scrape job store ────────────────────────────────────────────
+interface ChannelScrapeJob {
+  jobId: string;
+  channelId: string;
+  status: "idle" | "running" | "done" | "error";
+  total: number;
+  done: number;
+  currentVideoId: string | null;
+  errors: Array<{ videoId: string; error: string }>;
+  results: Array<{ videoId: string; status: "scraped" | "error"; likeCount?: number | null; commentCount?: string | null }>;
+  startedAt: number;
+  finishedAt: number | null;
+}
+// Map: channelId -> job state
+const _channelScrapeJobs = new Map<string, ChannelScrapeJob>();
+function getChannelScrapeJob(channelId: string): ChannelScrapeJob {
+  if (!_channelScrapeJobs.has(channelId)) {
+    _channelScrapeJobs.set(channelId, { jobId: "", channelId, status: "idle", total: 0, done: 0, currentVideoId: null, errors: [], results: [], startedAt: 0, finishedAt: null });
+  }
+  return _channelScrapeJobs.get(channelId)!;
 }
 
 function todayStr() {
@@ -459,9 +481,123 @@ const videosRouter = router({
       }
       return { success: true, result };
     }),
-});
 
-// ─── Analytics Router ─────────────────────────────────────────────────────────
+  /** Start a background scrape for all videos in a specific channel. */
+  startChannelScrape: protectedProcedure
+    .input(z.object({ channelId: z.string() }))
+    .mutation(async ({ input }) => {
+      const job = getChannelScrapeJob(input.channelId);
+      if (job.status === "running") {
+        return { jobId: job.jobId, alreadyRunning: true };
+      }
+      // Fetch all videos for this channel
+      const channelVideos = await getVideosByChannelId(input.channelId);
+      const ytVideos = channelVideos.filter((v: any) =>
+        typeof v.videoId === "string" && v.videoId.startsWith("yt_")
+      );
+      const rawIds = ytVideos.map((v: any) => (v.videoId as string).replace(/^yt_/, ""));
+      const jobId = nanoid(8);
+      const newJob: ChannelScrapeJob = {
+        jobId,
+        channelId: input.channelId,
+        status: "running",
+        total: rawIds.length,
+        done: 0,
+        currentVideoId: null,
+        errors: [],
+        results: [],
+        startedAt: Date.now(),
+        finishedAt: null,
+      };
+      _channelScrapeJobs.set(input.channelId, newJob);
+      // Fire-and-forget background processing
+      (async () => {
+        const today = todayStr();
+        for (const rawId of rawIds) {
+          const current = _channelScrapeJobs.get(input.channelId);
+          if (!current || current.jobId !== jobId) break; // cancelled or replaced
+          current.currentVideoId = rawId;
+          try {
+            const result = await scrapeVideoComments(rawId);
+            const dbVideoId = `yt_${rawId}`;
+            await upsertCommentSnapshot({
+              videoId: dbVideoId,
+              date: today,
+              likeCount: result.likeCount,
+              commentCount: result.commentCount,
+              commentCountNum: result.commentCountNum,
+              topCommentId: result.topComment?.commentId,
+              topCommentAuthor: result.topComment?.author,
+              topCommentText: result.topComment?.text,
+              topCommentLikes: result.topComment?.likeCount,
+              topCommentLikesNum: result.topComment?.likeCountNum,
+              topCommentReplyCount: result.topComment?.replyCount ?? 0,
+              scrapeError: result.error ?? null,
+              scrapedAt: result.scrapedAt,
+            });
+            // Auto-fill scraped likes/comments into view_counts for today
+            if (!result.error && (result.likeCount != null || result.commentCountNum != null)) {
+              const countId = `vc_${dbVideoId}_${today}`;
+              const existing = await getLatestViewCountByVideoId(dbVideoId);
+              await insertViewCount({
+                countId,
+                videoId: dbVideoId,
+                date: today,
+                viewCount: existing?.viewCount ?? 0,
+                likes: result.likeCount ?? existing?.likes ?? 0,
+                comments: result.commentCountNum ?? existing?.comments ?? 0,
+                shares: existing?.shares ?? 0,
+                engagementRate: existing?.engagementRate ?? "0",
+              });
+            }
+            if (result.error) {
+              current.errors.push({ videoId: rawId, error: result.error });
+              current.results.push({ videoId: rawId, status: "error" });
+            } else {
+              current.results.push({ videoId: rawId, status: "scraped", likeCount: result.likeCount, commentCount: result.commentCount });
+            }
+          } catch (e: any) {
+            current.errors.push({ videoId: rawId, error: e?.message ?? "Unknown error" });
+            current.results.push({ videoId: rawId, status: "error" });
+          }
+          current.done++;
+          await new Promise((r) => setTimeout(r, 1200));
+        }
+        const finalJob = _channelScrapeJobs.get(input.channelId);
+        if (finalJob && finalJob.jobId === jobId) {
+          finalJob.status = "done";
+          finalJob.currentVideoId = null;
+          finalJob.finishedAt = Date.now();
+        }
+      })().catch(() => {
+        const finalJob = _channelScrapeJobs.get(input.channelId);
+        if (finalJob && finalJob.jobId === jobId) {
+          finalJob.status = "error";
+          finalJob.finishedAt = Date.now();
+        }
+      });
+      return { jobId, alreadyRunning: false, total: rawIds.length };
+    }),
+
+  /** Poll per-channel scrape job status. */
+  channelScrapeStatus: protectedProcedure
+    .input(z.object({ channelId: z.string() }))
+    .query(({ input }) => {
+      const job = getChannelScrapeJob(input.channelId);
+      return {
+        status: job.status,
+        total: job.total,
+        done: job.done,
+        currentVideoId: job.currentVideoId,
+        errors: job.errors,
+        recentResults: job.results.slice(-10),
+        startedAt: job.startedAt,
+        finishedAt: job.finishedAt,
+        percent: job.total > 0 ? Math.round((job.done / job.total) * 100) : 0,
+      };
+    }),
+});
+// ─── Analytics Routerr ─────────────────────────────────────────────────────────
 const analyticsRouter = router({
   trends: protectedProcedure
     .input(z.object({ days: z.number().min(1).max(365).default(30) }))
@@ -856,14 +992,14 @@ const channelsRouter = router({
           isActive: true,
           isSeen: false,  // triggers the Channels nav badge
         });
-        // Snapshot initial view count
+        // Snapshot initial view count — use PreserveScrape so re-linking never wipes scraped data
         const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
-        await insertViewCount({
+        await insertViewCountPreserveScrape({
           countId,
           videoId: upload.ytVideoId,
           date: todayStr(),
           viewCount: upload.viewCount,
-          likes: upload.likeCount,
+          likes: upload.likeCount ?? 0,
           comments: 0,
           shares: 0,
           engagementRate: "0",
@@ -952,14 +1088,15 @@ const channelsRouter = router({
           });
         }
 
-        // Snapshot today's stats (upsert — updates if already exists today)
+        // Snapshot today's stats — use PreserveScrape variant so scraped likes/comments
+        // are NEVER overwritten by the 0-values returned by the channel listing.
         const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
-        await insertViewCount({
+        await insertViewCountPreserveScrape({
           countId,
           videoId: upload.ytVideoId,
           date: todayStr(),
           viewCount: v3?.viewCount ?? upload.viewCount,
-          likes: v3?.likeCount ?? upload.likeCount,
+          likes: v3?.likeCount ?? upload.likeCount ?? 0,
           comments: v3?.commentCount ?? 0,
           shares: 0,
           engagementRate: "0",

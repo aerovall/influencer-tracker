@@ -23,6 +23,7 @@ import {
   insertSyncLog,
   insertVideo,
   insertViewCount,
+  insertViewCountPreserveScrape,
   updateChannelLastChecked,
   updatePlatformAccountSyncTime,
   updateReportSchedule,
@@ -487,24 +488,20 @@ export async function runChannelSync(): Promise<{ newVideos: number; updatedStat
           });
         }
 
-        // Snapshot today's stats (skip if already done today)
+        // Snapshot today's stats — use PreserveScrape so daily sync never wipes scraped likes/comments
         if (upload.viewCount > 0 || upload.durationSeconds > 0) {
           const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
-          try {
-            await insertViewCount({
-              countId,
-              videoId: upload.ytVideoId,
-              date: todayStr(),
-              viewCount: upload.viewCount,
-              likes: upload.likeCount,
-              comments: 0,
-              shares: 0,
-              engagementRate: "0",
-            });
-            updatedStats++;
-          } catch {
-            // duplicate key = already snapshotted today, skip silently
-          }
+          await insertViewCountPreserveScrape({
+            countId,
+            videoId: upload.ytVideoId,
+            date: todayStr(),
+            viewCount: upload.viewCount,
+            likes: upload.likeCount ?? 0,
+            comments: 0,
+            shares: 0,
+            engagementRate: "0",
+          });
+          updatedStats++;
         }
       }
 

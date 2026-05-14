@@ -491,11 +491,52 @@ function CommentPanel({ videoId }: { videoId: string }) {
 function ChannelCard({ channel }: { channel: any }) {
   const utils = trpc.useUtils();
   const [expanded, setExpanded] = useState(false);
+  const [scrapePolling, setScrapePolling] = useState(false);
+  const prevScrapeStatusRef = useRef<string>("idle");
 
   const { data: videos, isLoading: videosLoading } = trpc.channels.listByChannel.useQuery(
     { channelId: channel.channelId },
     { enabled: expanded }
   );
+
+  // Per-channel scrape job polling
+  const { data: channelScrapeStatus } = trpc.videos.channelScrapeStatus.useQuery(
+    { channelId: channel.channelId },
+    { refetchInterval: scrapePolling ? 2000 : false, staleTime: 0 }
+  );
+  const startChannelScrape = trpc.videos.startChannelScrape.useMutation({
+    onSuccess: (res) => {
+      if ((res as any).alreadyRunning) {
+        toast.info("A scrape is already running for this channel.");
+      } else {
+        setScrapePolling(true);
+        const total = (res as any).total ?? 0;
+        toast.info(`Scraping ${total} video${total !== 1 ? "s" : ""} for ${channel.channelName}...`);
+      }
+    },
+    onError: (e) => toast.error(`Scrape failed: ${e.message}`),
+  });
+  // Watch for per-channel scrape completion
+  useEffect(() => {
+    if (!channelScrapeStatus) return;
+    const prev = prevScrapeStatusRef.current;
+    if (prev === "running" && channelScrapeStatus.status === "done") {
+      setScrapePolling(false);
+      const errCount = channelScrapeStatus.errors.length;
+      if (errCount > 0) {
+        toast.warning(`Scrape done — ${channelScrapeStatus.done} scraped, ${errCount} error${errCount !== 1 ? "s" : ""}`);
+      } else {
+        toast.success(`Scrape complete — ${channelScrapeStatus.done} video${channelScrapeStatus.done !== 1 ? "s" : ""} updated!`);
+      }
+      utils.videos.getCommentData.invalidate();
+      utils.videos.getCommentDataBulk.invalidate();
+      utils.channels.listByChannel.invalidate({ channelId: channel.channelId });
+    }
+    if (channelScrapeStatus.status === "running") setScrapePolling(true);
+    prevScrapeStatusRef.current = channelScrapeStatus.status;
+  }, [channelScrapeStatus?.status, channelScrapeStatus?.done]);
+  const isChannelScraping = channelScrapeStatus?.status === "running";
+  const channelScrapePercent = channelScrapeStatus?.percent ?? 0;
 
   const syncChannel = trpc.channels.syncChannel.useMutation({
     onSuccess: (res) => {
@@ -560,6 +601,16 @@ function ChannelCard({ channel }: { channel: any }) {
             <Button
               size="sm"
               variant="outline"
+              className={`gap-1.5 text-xs h-7 border-amber-500/40 text-amber-400 hover:bg-amber-500/10 ${isChannelScraping ? "opacity-80" : ""}`}
+              disabled={isChannelScraping || startChannelScrape.isPending}
+              onClick={() => startChannelScrape.mutate({ channelId: channel.channelId })}
+            >
+              <Bot className={`h-3 w-3 ${isChannelScraping ? "animate-pulse" : ""}`} />
+              {isChannelScraping ? `${channelScrapePercent}%` : "Scrape"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
               className="gap-1.5 text-xs h-7"
               onClick={() => setExpanded((e) => !e)}
             >
@@ -577,6 +628,20 @@ function ChannelCard({ channel }: { channel: any }) {
           </div>
         </div>
       </CardHeader>
+
+      {/* Per-channel scrape progress bar */}
+      {isChannelScraping && (
+        <div className="px-4 pb-3 space-y-1.5">
+          <Progress value={channelScrapePercent} className="h-1.5" />
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span className="text-amber-400/80 flex items-center gap-1">
+              <Bot className="h-3 w-3 animate-pulse" />
+              Scraping likes &amp; comments...
+            </span>
+            <span>{channelScrapeStatus?.done ?? 0} / {channelScrapeStatus?.total ?? 0} videos</span>
+          </div>
+        </div>
+      )}
 
       {expanded && (
         <CardContent className="pt-0">

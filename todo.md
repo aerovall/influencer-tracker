@@ -230,3 +230,11 @@
 - [x] Fix 11: VideoRow shill badge — add shills.countByVideo (always-enabled) so badge shows before row is expanded
 - [x] Fix 12: Add getShillCountByVideoId db helper + shills.countByVideo tRPC procedure
 - [x] Fix 13: Update stale vitest tests to reflect free-form influencerName (no enum rejection)
+
+## v2.7 — Per-Channel Scrape + Sync Fix
+- [x] Fix: insertViewCount onDuplicateKeyUpdate must NOT overwrite likes/comments with 0 when scraped values already exist
+- [x] Fix: syncEngine runChannelSync inserts likes: upload.likeCount (which is 0 from listing) — preserve existing scraped likes/comments on duplicate
+- [x] Backend: add db helper insertViewCountPreserveScrape — uses GREATEST(existing, new) so scraped values are never overwritten
+- [x] Backend: tRPC videos.startChannelScrape + videos.channelScrapeStatus — per-channel background scrape with polling
+- [x] UI: add "Scrape" button per channel card in Channels.tsx (next to Sync button)
+- [x] UI: show per-channel scrape progress bar and video count while running

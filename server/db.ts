@@ -264,6 +264,34 @@ export async function insertViewCount(data: InsertViewCount) {
   return true;
 }
 
+/**
+ * Insert or update a view_count row, but NEVER overwrite likes/comments with a lower value.
+ * Uses GREATEST(new_value, existing_value) so scraped likes/comments are preserved
+ * even when a sync runs afterwards and only has viewCount data (likes=0 from listing).
+ */
+export async function insertViewCountPreserveScrape(data: InsertViewCount) {
+  const db = await getDb();
+  if (!db) throw new Error("DB unavailable");
+  await db
+    .insert(viewCounts)
+    .values(data)
+    .onDuplicateKeyUpdate({
+      set: {
+        // Always update viewCount (views are always accurate from the listing)
+        viewCount: data.viewCount,
+        shares: data.shares,
+        engagementRate: data.engagementRate,
+        // Preserve likes/comments: only update if the new value is GREATER than existing
+        // This prevents sync (which gets likes=0 from channel listing) from wiping scraped values
+        likes: sql`GREATEST(${viewCounts.likes}, ${data.likes ?? 0})`,
+        comments: sql`GREATEST(${viewCounts.comments}, ${data.comments ?? 0})`,
+        ...(data.manualLikes !== undefined ? { manualLikes: data.manualLikes } : {}),
+        ...(data.manualComments !== undefined ? { manualComments: data.manualComments } : {}),
+      },
+    });
+  return true;
+}
+
 export async function getViewCountTrends(days: number = 30) {
   const db = await getDb();
   if (!db) return [];
