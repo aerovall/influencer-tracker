@@ -127,9 +127,9 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         {kpisLoading ? (
-          Array.from({ length: 4 }).map((_, i) => (
+          Array.from({ length: 3 }).map((_, i) => (
             <Card key={i} className="border-border/50">
               <CardContent className="p-6">
                 <Skeleton className="h-8 w-24 mb-2" />
@@ -141,7 +141,6 @@ export default function Dashboard() {
           <>
             <KpiCard title="Total Videos" value={formatNumber(kpis?.totalVideos)} icon={Video} />
             <KpiCard title="Total Views" value={formatNumber(kpis?.totalViews)} icon={Eye} accent="oklch(0.78 0.15 80)" />
-            <KpiCard title="Avg Engagement" value={`${kpis?.avgEngagementRate ?? "0"}%`} icon={TrendingUp} />
             <KpiCard
               title="Unread Alerts"
               value={kpis?.unreadAlerts ?? 0}

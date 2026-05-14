@@ -263,3 +263,7 @@
 - [x] Excel: Summary sheet with title block, KPI table, by-channel and by-platform sections
 - [x] Reports page: redesign with summary bar, grouped daily/weekly sections, polished row cards
 - [x] Reports page: rich detail dialog with stat chips, scrollable content, and period info
+
+## v2.12 — Dashboard KPI + Snapshot Fix
+- [x] Remove "Avg Engagement" KPI card from Dashboard
+- [x] Fix: Snapshot Views (runViewCountSnapshot) uses insertViewCountPreserveScrape so scraped likes/comments are never overwritten with 0

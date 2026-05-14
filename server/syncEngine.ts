@@ -171,14 +171,14 @@ export async function runViewCountSnapshot(): Promise<{ appended: number; skippe
     }
   }
 
-  // Insert view count rows (append-only, never overwrite)
+  // Insert view count rows — use PreserveScrape so snapshot never zeros out scraped likes/comments
   for (const video of allVideos) {
     const m = metricsMap.get(video.videoId);
     if (!m) {
-      // No metrics available — use last known count if exists
+      // No metrics available — carry forward last known count
       const last = await getLatestViewCountByVideoId(video.videoId);
       if (last) {
-        const inserted = await insertViewCount({
+        const inserted = await insertViewCountPreserveScrape({
           countId: `cnt_${nanoid(10)}`,
           videoId: video.videoId,
           date: today,
@@ -194,7 +194,7 @@ export async function runViewCountSnapshot(): Promise<{ appended: number; skippe
       continue;
     }
 
-    const inserted = await insertViewCount({
+    const inserted = await insertViewCountPreserveScrape({
       countId: `cnt_${nanoid(10)}`,
       videoId: video.videoId,
       date: today,
