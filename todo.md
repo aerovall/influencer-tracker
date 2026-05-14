@@ -251,3 +251,15 @@
 - [x] Add tRPC analytics.viewsByChannel query returning total views per channel name (computed client-side from trends data)
 - [x] Replace "Views by Influencer" area/line chart with horizontal bar chart (views per channel) showing Views, Likes, Comments
 - [x] Keep the All Influencers filter dropdown working with real channel names
+
+## v2.11 — Excel & Reports Visual Polish
+- [x] Excel: dark navy header row with white bold text on all sheets
+- [x] Excel: alternating row fill (light grey every other row)
+- [x] Excel: number format for views/likes/comments (comma thousands separator)
+- [x] Excel: percentage format for engagement rate column
+- [x] Excel: freeze top header row on all data sheets
+- [x] Excel: cell borders on all data cells
+- [x] Excel: auto-fit column widths (wider for title/URL, narrower for numbers)
+- [x] Excel: Summary sheet with title block, KPI table, by-channel and by-platform sections
+- [x] Reports page: redesign with summary bar, grouped daily/weekly sections, polished row cards
+- [x] Reports page: rich detail dialog with stat chips, scrollable content, and period info
