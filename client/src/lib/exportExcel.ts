@@ -409,11 +409,11 @@ function buildSummarySheet(data: any): XLSX.WorkSheet {
 
 function buildVideosSheet(videos: any[]): XLSX.WorkSheet {
   const accent = ACCENT.videos;
+  // Removed: Engagement % column. Title column is hyperlinked to video URL.
   const headers = [
     "#", "Channel / Influencer", "Platform", "Title",
     "Published", "Added", "Duration (s)",
     "Views", "Likes", "Comments",
-    "Engagement %", "Video URL",
   ];
   const numericCols = [0, 6, 7, 8, 9];
 
@@ -439,8 +439,6 @@ function buildVideosSheet(videos: any[]): XLSX.WorkSheet {
     fmtNum(v.viewCount),
     fmtNum(v.likes),
     fmtNum(v.comments),
-    v.engagementRate ? Number(Number(v.engagementRate).toFixed(4)) : "",
-    v.videoUrl ?? "",
   ]);
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
@@ -459,51 +457,70 @@ function buildVideosSheet(videos: any[]): XLSX.WorkSheet {
       if (c === 8) heat = heatColour(Number(rows[i][8]) || 0, likePerc.p33, likePerc.p66);
       if (c === 9) heat = heatColour(Number(rows[i][9]) || 0, commentPerc.p33, commentPerc.p66);
 
-      // Rank medal for top 3 by views (col 7)
+      // Rank medal for top 3 by views (col 0)
       const rankHeat = c === 0 ? rankColour(i + 1) : null;
 
       ws[addr].s = dataStyle(i, align, rankHeat?.bg ?? heat?.bg, rankHeat?.text ?? heat?.text);
       if (numericCols.includes(c) && typeof ws[addr].v === "number") ws[addr].z = "#,##0";
-      if (c === 10 && typeof ws[addr].v === "number") ws[addr].z = "0.00%";
+
+      // Hyperlink on Title column (c === 3)
+      if (c === 3 && sorted[i]?.videoUrl) {
+        ws[addr].l = { Target: sorted[i].videoUrl, Tooltip: sorted[i].title ?? "" };
+        if (!rankHeat && !heat) {
+          ws[addr].s = { ...ws[addr].s, font: { ...ws[addr].s.font, underline: true, color: { rgb: "1A3A8F" } } };
+        }
+      }
     }
   }
 
   freezeHeader(ws);
-  setCols(ws, [5, 22, 12, 48, 13, 13, 12, 14, 10, 10, 13, 52]);
+  setCols(ws, [5, 22, 12, 55, 13, 13, 12, 14, 10, 10]);
   ws["!rows"] = [{ hpt: 22 }];
   return ws;
 }
 
 function buildViewCountsSheet(viewCounts: any[], videos: any[]): XLSX.WorkSheet {
   const accent = ACCENT.viewCounts;
-  // Build a map from videoId -> title for fast lookup
-  const titleMap = new Map<string, string>();
+
+  // Build a map from videoId -> video object for fast lookup
+  const videoMap = new Map<string, any>();
   for (const v of videos) {
-    if (v.videoId) titleMap.set(v.videoId, v.title ?? v.videoId);
+    if (v.videoId) videoMap.set(v.videoId, v);
   }
 
-  // Columns: Video Title, Channel, Date, Views, Likes, Comments, Views Bar
-  const headers = ["Video Title", "Channel", "Date", "Views", "Likes", "Comments", "Views Bar"];
+  // Deduplicate: keep only the latest snapshot per video (highest date)
+  const latestMap = new Map<string, any>();
+  for (const vc of viewCounts) {
+    const existing = latestMap.get(vc.videoId);
+    if (!existing || new Date(vc.date) > new Date(existing.date)) {
+      latestMap.set(vc.videoId, vc);
+    }
+  }
+  const deduped = Array.from(latestMap.values());
+
+  // Columns: Video Title, Channel, Date, Views, Likes, Comments (no Views Bar)
+  const headers = ["Video Title", "Channel", "Date", "Views", "Likes", "Comments"];
   const numericCols = [3, 4, 5]; // Views, Likes, Comments
 
   // Sort by views descending
-  const sorted = [...viewCounts].sort((a, b) => Number(b.viewCount ?? 0) - Number(a.viewCount ?? 0));
+  const sorted = [...deduped].sort((a, b) => Number(b.viewCount ?? 0) - Number(a.viewCount ?? 0));
 
-  // Compute max views for bar chart
-  const maxViews = Math.max(...sorted.map((vc) => Number(vc.viewCount ?? 0)), 1);
   const viewValues = sorted.map((vc) => Number(vc.viewCount ?? 0));
+  const likeValues = sorted.map((vc) => Number(vc.likes ?? 0));
+  const commentValues = sorted.map((vc) => Number(vc.comments ?? 0));
   const viewPerc = computePercentiles(viewValues);
+  const likePerc = computePercentiles(likeValues);
+  const commentPerc = computePercentiles(commentValues);
 
   const rows = sorted.map((vc) => {
-    const videoObj = videos.find((v) => v.videoId === vc.videoId);
+    const videoObj = videoMap.get(vc.videoId);
     return [
-      titleMap.get(vc.videoId) ?? vc.videoId ?? "",
+      videoObj?.title ?? videoObj?.videoId ?? vc.videoId ?? "",
       videoObj?.influencerName ?? "",
       fmtDate(vc.date),
       fmtNum(vc.viewCount),
       fmtNum(vc.likes),
       fmtNum(vc.comments),
-      barChart(Number(vc.viewCount ?? 0), maxViews, 15),
     ];
   });
 
@@ -512,6 +529,8 @@ function buildViewCountsSheet(viewCounts: any[], videos: any[]): XLSX.WorkSheet 
 
   for (let i = 0; i < rows.length; i++) {
     const r = i + 1;
+    const vc = sorted[i];
+    const videoObj = videoMap.get(vc.videoId);
     for (let c = 0; c < headers.length; c++) {
       const addr = XLSX.utils.encode_cell({ r, c });
       if (!ws[addr]) ws[addr] = { t: "z" };
@@ -519,25 +538,39 @@ function buildViewCountsSheet(viewCounts: any[], videos: any[]): XLSX.WorkSheet 
 
       let heat: { bg: string; text: string } | undefined;
       if (c === 3) heat = heatColour(Number(rows[i][3]) || 0, viewPerc.p33, viewPerc.p66);
+      if (c === 4) heat = heatColour(Number(rows[i][4]) || 0, likePerc.p33, likePerc.p66);
+      if (c === 5) heat = heatColour(Number(rows[i][5]) || 0, commentPerc.p33, commentPerc.p66);
 
       ws[addr].s = dataStyle(i, align, heat?.bg, heat?.text);
       if (numericCols.includes(c) && typeof ws[addr].v === "number") ws[addr].z = "#,##0";
+
+      // Add hyperlink on title column
+      if (c === 0 && videoObj?.videoUrl) {
+        ws[addr].l = { Target: videoObj.videoUrl, Tooltip: videoObj.title ?? "" };
+        ws[addr].s = { ...ws[addr].s, font: { ...ws[addr].s.font, underline: true, color: { rgb: "1A3A8F" } } };
+      }
     }
   }
 
   freezeHeader(ws);
-  setCols(ws, [52, 22, 14, 14, 10, 10, 20]);
+  setCols(ws, [56, 22, 14, 14, 12, 12]);
   ws["!rows"] = [{ hpt: 22 }];
   return ws;
 }
 
-function buildSponsorshipsSheet(shills: any[]): XLSX.WorkSheet {
+function buildSponsorshipsSheet(shills: any[], videos: any[]): XLSX.WorkSheet {
   const accent = ACCENT.sponsorships;
+  // Build video lookup map
+  const videoMap = new Map<string, any>();
+  for (const v of videos) {
+    if (v.videoId) videoMap.set(v.videoId, v);
+  }
+
   const headers = [
-    "#", "Brand", "Video ID", "Timestamp (s)", "Duration (s)",
+    "#", "Brand", "Video Title", "Channel", "Timestamp (s)", "Duration (s)",
     "Promo Type", "Notes", "Created At",
   ];
-  const numericCols = [0, 3, 4];
+  const numericCols = [0, 4, 5];
 
   // Sort by brand then timestamp
   const sorted = [...shills].sort((a, b) =>
@@ -557,16 +590,20 @@ function buildSponsorshipsSheet(shills: any[]): XLSX.WorkSheet {
     }
   }
 
-  const rows = sorted.map((s, i) => [
-    i + 1,
-    s.productBrand,
-    s.videoId,
-    fmtNum(s.timestamp),
-    fmtNum(s.lengthSeconds),
-    s.promoType ?? "",
-    s.notes ?? "",
-    fmtDate(s.createdAt),
-  ]);
+  const rows = sorted.map((s, i) => {
+    const videoObj = videoMap.get(s.videoId);
+    return [
+      i + 1,
+      s.productBrand,
+      videoObj?.title ?? s.videoId ?? "",
+      videoObj?.influencerName ?? "",
+      fmtNum(s.timestamp),
+      fmtNum(s.lengthSeconds),
+      s.promoType ?? "",
+      s.notes ?? "",
+      fmtDate(s.createdAt),
+    ];
+  });
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   applyHeaderRow(ws, headers.length, accent);
@@ -575,6 +612,7 @@ function buildSponsorshipsSheet(shills: any[]): XLSX.WorkSheet {
     const r = i + 1;
     const brand = sorted[i]?.productBrand ?? "";
     const brandAccent = brandColourMap.get(brand) ?? ACCENT.sponsorships;
+    const videoObj = videoMap.get(sorted[i]?.videoId);
     for (let c = 0; c < headers.length; c++) {
       const addr = XLSX.utils.encode_cell({ r, c });
       if (!ws[addr]) ws[addr] = { t: "z" };
@@ -591,22 +629,28 @@ function buildSponsorshipsSheet(shills: any[]): XLSX.WorkSheet {
         ws[addr].s = dataStyle(i, align);
       }
       if (numericCols.includes(c) && typeof ws[addr].v === "number") ws[addr].z = "#,##0";
+      // Add hyperlink on Video Title column (c === 2)
+      if (c === 2 && videoObj?.videoUrl) {
+        ws[addr].l = { Target: videoObj.videoUrl, Tooltip: videoObj.title ?? "" };
+        ws[addr].s = { ...ws[addr].s, font: { ...ws[addr].s.font, underline: true, color: { rgb: "1A3A8F" } } };
+      }
     }
   }
 
   freezeHeader(ws);
-  setCols(ws, [5, 26, 22, 14, 12, 28, 36, 16]);
+  setCols(ws, [5, 26, 52, 22, 14, 12, 20, 36, 16]);
   ws["!rows"] = [{ hpt: 22 }];
   return ws;
 }
 
 function buildChannelsSheet(channels: any[]): XLSX.WorkSheet {
   const accent = ACCENT.channels;
+  // Removed: Handle column. Columns: #, Channel Name, Channel ID, Subscribers, Videos Tracked, Last Sync, Created At
   const headers = [
-    "#", "Channel Name", "Handle", "Channel ID",
+    "#", "Channel Name", "Channel ID",
     "Subscribers", "Videos Tracked", "Last Sync", "Created At",
   ];
-  const numericCols = [0, 4, 5];
+  const numericCols = [0, 3, 4];
 
   // Sort by subscriber count descending
   const sorted = [...channels].sort((a, b) => Number(b.subscriberCount ?? 0) - Number(a.subscriberCount ?? 0));
@@ -616,8 +660,8 @@ function buildChannelsSheet(channels: any[]): XLSX.WorkSheet {
   const rows = sorted.map((ch, i) => [
     i + 1,
     ch.channelName,
-    ch.channelHandle ?? "",
     ch.channelId,
+    // subscriberCount is stored as the full integer (e.g. 232000 for 232K)
     fmtNum(ch.subscriberCount),
     fmtNum(ch.videoCount),
     fmtDate(ch.lastCheckedAt),
@@ -643,9 +687,9 @@ function buildChannelsSheet(channels: any[]): XLSX.WorkSheet {
           alignment: { horizontal: "left", vertical: "center" },
           border: { top: { style: "thin", color: { rgb: BORDER_CLR } }, bottom: { style: "thin", color: { rgb: BORDER_CLR } }, left: { style: "thin", color: { rgb: BORDER_CLR } }, right: { style: "thin", color: { rgb: BORDER_CLR } } },
         };
-      } else if (c === 4) {
-        // Subscriber count heat-map
-        const heat = heatColour(Number(rows[i][4]) || 0, subPerc.p33, subPerc.p66);
+      } else if (c === 3) {
+        // Subscriber count heat-map — format with comma separator (e.g. 232,000)
+        const heat = heatColour(Number(rows[i][3]) || 0, subPerc.p33, subPerc.p66);
         ws[addr].s = dataStyle(i, "right", heat.bg, heat.text);
         if (typeof ws[addr].v === "number") ws[addr].z = "#,##0";
       } else {
@@ -656,16 +700,17 @@ function buildChannelsSheet(channels: any[]): XLSX.WorkSheet {
   }
 
   freezeHeader(ws);
-  setCols(ws, [5, 26, 20, 28, 16, 14, 16, 16]);
+  setCols(ws, [5, 26, 28, 16, 14, 16, 16]);
   ws["!rows"] = [{ hpt: 22 }];
   return ws;
 }
 
 function buildTopVideosSheet(videos: any[]): XLSX.WorkSheet {
   const accent = ACCENT.performance;
+  // Removed: Engagement % column
   const headers = [
     "Rank", "Medal", "Title", "Channel", "Platform",
-    "Views", "Likes", "Comments", "Engagement %", "Published",
+    "Views", "Likes", "Comments", "Published",
   ];
 
   // Sort by views descending, take top 20
@@ -684,7 +729,6 @@ function buildTopVideosSheet(videos: any[]): XLSX.WorkSheet {
     fmtNum(v.viewCount),
     fmtNum(v.likes),
     fmtNum(v.comments),
-    v.engagementRate ? Number(Number(v.engagementRate).toFixed(4)) : "",
     fmtDate(v.publishedDate),
   ]);
 
@@ -699,19 +743,26 @@ function buildTopVideosSheet(videos: any[]): XLSX.WorkSheet {
     for (let c = 0; c < headers.length; c++) {
       const addr = XLSX.utils.encode_cell({ r, c });
       if (!ws[addr]) ws[addr] = { t: "z" };
-      const align = [0, 5, 6, 7, 8].includes(c) ? "right" : (c === 1 ? "center" : "left");
+      const align = [0, 5, 6, 7].includes(c) ? "right" : (c === 1 ? "center" : "left");
 
       const rankHeat = c === 0 ? rankColour(i + 1) : null;
       const viewHeat = c === 5 ? heatColour(Number(rows[i][5]) || 0, viewPerc.p33, viewPerc.p66) : null;
 
       ws[addr].s = dataStyle(i, align, rankHeat?.bg ?? viewHeat?.bg, rankHeat?.text ?? viewHeat?.text);
       if ([0, 5, 6, 7].includes(c) && typeof ws[addr].v === "number") ws[addr].z = "#,##0";
-      if (c === 8 && typeof ws[addr].v === "number") ws[addr].z = "0.00%";
+
+      // Hyperlink on Title column (c === 2)
+      if (c === 2 && top20[i]?.videoUrl) {
+        ws[addr].l = { Target: top20[i].videoUrl, Tooltip: top20[i].title ?? "" };
+        if (!rankHeat && !viewHeat) {
+          ws[addr].s = { ...ws[addr].s, font: { ...ws[addr].s.font, underline: true, color: { rgb: "1A3A8F" } } };
+        }
+      }
     }
   }
 
   freezeHeader(ws);
-  setCols(ws, [7, 7, 50, 22, 12, 14, 10, 10, 13, 14]);
+  setCols(ws, [7, 7, 55, 22, 12, 14, 10, 10, 14]);
   ws["!rows"] = [{ hpt: 22 }];
   return ws;
 }
@@ -1021,7 +1072,7 @@ export function downloadDashboardExcel(data: any) {
   XLSX.utils.book_append_sheet(wb, buildTopVideosSheet(data.videos ?? []),          "🏆 Top Videos");
   XLSX.utils.book_append_sheet(wb, buildVideosSheet(data.videos ?? []),             "🎥 All Videos");
   XLSX.utils.book_append_sheet(wb, buildViewCountsSheet(data.viewCounts ?? [], data.videos ?? []), "📈 View Counts");
-  XLSX.utils.book_append_sheet(wb, buildSponsorshipsSheet(data.sponsorships ?? []), "💰 Sponsorships");
+  XLSX.utils.book_append_sheet(wb, buildSponsorshipsSheet(data.sponsorships ?? [], data.videos ?? []), "💰 Sponsorships");
   XLSX.utils.book_append_sheet(wb, buildChannelsSheet(data.channels ?? []),         "📡 Channels");
   if ((data.reports ?? []).length > 0) {
     XLSX.utils.book_append_sheet(wb, buildDailyReportsSheet(data.reports ?? []),    "📅 Daily Reports");

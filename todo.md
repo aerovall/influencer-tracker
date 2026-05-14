@@ -317,3 +317,14 @@
 - [x] Find and replace Admin Panel legacy "Download .xlsx" with the rich downloadDashboardExcel builder
 - [x] Ensure all video IDs replaced with titles, shares/engagement_rate removed
 - [x] Remove the old Admin Panel export description showing raw column names
+
+## v2.21 — Excel Export Comprehensive Fix
+- [x] View Counts: remove "Views Bar" Unicode column, add real embedded Excel bar chart (views per video)
+- [x] View Counts: deduplicate rows — keep only latest date per video, remove rows with 0 likes AND 0 comments (no engagement data)
+- [x] View Counts: fix video title column — show actual video name not raw yt_xxx ID
+- [x] Channels: fix subscriber count to show real value (stored as raw number, must multiply by 1000 or fix storage)
+- [x] Channels: remove "Handle" column
+- [x] Sponsorships: replace video ID with actual video name + hyperlink to video URL
+- [x] Top Videos: remove "Engagement %" column
+- [x] Top Videos: fix missing Views/Likes/Comments data (showing empty cells)
+- [x] All Videos: replace video ID/title with actual video name + hyperlink to video URL
