@@ -221,7 +221,9 @@ export async function getViewCountsByVideoId(videoId: string) {
     .select()
     .from(viewCounts)
     .where(eq(viewCounts.videoId, videoId))
-    .orderBy(viewCounts.date);
+    // Order by date ASC, then viewCount DESC so the highest-viewCount row for each date
+    // is always last — prevents a scraper row (viewCount=0) from shadowing a snapshot row.
+    .orderBy(viewCounts.date, desc(viewCounts.viewCount));
 }
 
 export async function getAllViewCounts() {

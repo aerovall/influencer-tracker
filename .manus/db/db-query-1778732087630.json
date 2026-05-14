@@ -1,0 +1,29 @@
+{
+  "query": "SELECT count_id, video_id, view_count, likes, comments, date FROM view_counts WHERE video_id = 'yt_4OKDgP-XoCY' ORDER BY date DESC LIMIT 5; SELECT COUNT(*) as cnt_count FROM view_counts WHERE count_id LIKE 'cnt_%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute SELECT count_id, video_id, view_count, likes, comments, date FROM view_counts WHERE video_id = 'yt_4OKDgP-XoCY' ORDER BY date DESC LIMIT 5; SELECT COUNT(*) as cnt_count FROM view_counts WHERE count_id LIKE 'cnt_%';",
+  "rows": [
+    {
+      "count_id": "vc_yt_4OKDgP-XoCY_2026-05-14",
+      "video_id": "yt_4OKDgP-XoCY",
+      "view_count": "8873",
+      "likes": "411",
+      "comments": "28",
+      "date": "2026-05-14"
+    },
+    {
+      "count_id": "vc_yt_4OKDgP-XoCY_2026-05-13",
+      "video_id": "yt_4OKDgP-XoCY",
+      "view_count": "8512",
+      "likes": "0",
+      "comments": "0",
+      "date": "2026-05-13"
+    }
+  ],
+  "messages": [
+    "cnt_count",
+    "0"
+  ],
+  "stdout": "count_id\tvideo_id\tview_count\tlikes\tcomments\tdate\nvc_yt_4OKDgP-XoCY_2026-05-14\tyt_4OKDgP-XoCY\t8873\t411\t28\t2026-05-14\nvc_yt_4OKDgP-XoCY_2026-05-13\tyt_4OKDgP-XoCY\t8512\t0\t0\t2026-05-13\ncnt_count\n0\n",
+  "stderr": "",
+  "execution_time_ms": 2110
+}

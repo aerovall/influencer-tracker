@@ -162,7 +162,8 @@ function ManualStatCell({
   // Display priority: optimistic > manual > auto
   const displayValue = optimisticVal !== null ? optimisticVal : (manualValue != null && manualValue > 0 ? manualValue : autoValue);
   const isManual = optimisticVal !== null || (manualValue != null && manualValue > 0);
-  const hasValue = displayValue != null && displayValue > 0;
+  // 0 is a valid scraped value (e.g. a video with 0 comments); only null/undefined means "no data"
+  const hasValue = displayValue != null;
 
   const updateStats = trpc.videos.updateManualStats.useMutation({
     onMutate: ({ likes, comments }) => {
@@ -673,8 +674,8 @@ function ChannelCard({ channel }: { channel: any }) {
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Video</th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Published</th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Views</th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider" title="YouTube hides like counts from public API since Nov 2021">Likes <span className="text-muted-foreground/40 normal-case font-normal">(hidden)</span></th>
-                    <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider" title="YouTube hides comment counts from public API">Comments <span className="text-muted-foreground/40 normal-case font-normal">(hidden)</span></th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Likes</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Comments</th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Shills</th>
                   </tr>

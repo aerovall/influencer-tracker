@@ -1,0 +1,80 @@
+{
+  "query": "SELECT vc.video_id, vc.view_count, vc.likes, vc.comments, vc.date FROM view_counts vc ORDER BY vc.date DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute SELECT vc.video_id, vc.view_count, vc.likes, vc.comments, vc.date FROM view_counts vc ORDER BY vc.date DESC LIMIT 10;",
+  "rows": [
+    {
+      "video_id": "yt_4OKDgP-XoCY",
+      "view_count": "8873",
+      "likes": "411",
+      "comments": "28",
+      "date": "2026-05-14"
+    },
+    {
+      "video_id": "yt_3cmavoxUhoE",
+      "view_count": "13644",
+      "likes": "636",
+      "comments": "172",
+      "date": "2026-05-14"
+    },
+    {
+      "video_id": "yt_y6_xnc35V6A",
+      "view_count": "11858",
+      "likes": "620",
+      "comments": "114",
+      "date": "2026-05-14"
+    },
+    {
+      "video_id": "yt_DZZLDDywIMI",
+      "view_count": "11512",
+      "likes": "650",
+      "comments": "261",
+      "date": "2026-05-14"
+    },
+    {
+      "video_id": "yt_6Q09Z0884TM",
+      "view_count": "16865",
+      "likes": "807",
+      "comments": "165",
+      "date": "2026-05-14"
+    },
+    {
+      "video_id": "yt_LXY_oYwQdiA",
+      "view_count": "14576",
+      "likes": "643",
+      "comments": "160",
+      "date": "2026-05-14"
+    },
+    {
+      "video_id": "yt_eO2eRMtE9fk",
+      "view_count": "5663",
+      "likes": "385",
+      "comments": "298",
+      "date": "2026-05-14"
+    },
+    {
+      "video_id": "yt_TN2jJeOP_5Y",
+      "view_count": "24388",
+      "likes": "845",
+      "comments": "128",
+      "date": "2026-05-14"
+    },
+    {
+      "video_id": "yt_60EqT9f-r2w",
+      "view_count": "2458",
+      "likes": "229",
+      "comments": "143",
+      "date": "2026-05-14"
+    },
+    {
+      "video_id": "yt_xKpRrByKkO4",
+      "view_count": "20239",
+      "likes": "1036",
+      "comments": "169",
+      "date": "2026-05-14"
+    }
+  ],
+  "messages": [],
+  "stdout": "video_id\tview_count\tlikes\tcomments\tdate\nyt_4OKDgP-XoCY\t8873\t411\t28\t2026-05-14\nyt_3cmavoxUhoE\t13644\t636\t172\t2026-05-14\nyt_y6_xnc35V6A\t11858\t620\t114\t2026-05-14\nyt_DZZLDDywIMI\t11512\t650\t261\t2026-05-14\nyt_6Q09Z0884TM\t16865\t807\t165\t2026-05-14\nyt_LXY_oYwQdiA\t14576\t643\t160\t2026-05-14\nyt_eO2eRMtE9fk\t5663\t385\t298\t2026-05-14\nyt_TN2jJeOP_5Y\t24388\t845\t128\t2026-05-14\nyt_60EqT9f-r2w\t2458\t229\t143\t2026-05-14\nyt_xKpRrByKkO4\t20239\t1036\t169\t2026-05-14\n",
+  "stderr": "",
+  "execution_time_ms": 1793
+}

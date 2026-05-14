@@ -1,0 +1,9 @@
+{
+  "query": "DELETE FROM view_counts WHERE count_id LIKE 'cnt_%' AND (video_id, date) IN (SELECT video_id, date FROM (SELECT video_id, date FROM view_counts WHERE count_id LIKE 'vc_%') AS vc_rows);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute DELETE FROM view_counts WHERE count_id LIKE 'cnt_%' AND (video_id, date) IN (SELECT video_id, date FROM (SELECT video_id, date FROM view_counts WHERE count_id LIKE 'vc_%') AS vc_rows);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1811
+}
