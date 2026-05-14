@@ -39,6 +39,7 @@ import {
   getVideosByChannelId,
   getViewCountTrends,
   getViewCountsByVideoId,
+  getLatestViewCountByVideoId,
   insertAlertThreshold,
   insertShill,
   insertVideo,
@@ -61,6 +62,7 @@ import {
   getSocialAccountById,
   deleteSocialAccount,
   getCredentialByKey,
+  getShillCountByVideoId,
 } from "./db";
 import {
   generateDailyReport,
@@ -187,7 +189,7 @@ const videosRouter = router({
 
   create: protectedProcedure
     .input(z.object({
-      influencerName: z.enum(["Levi", "NoBs", "Danielle"]),
+      influencerName: z.string().min(1),
       platform: z.enum(["YouTube", "Instagram", "TikTok"]),
       videoUrl: z.string().url(),
       title: z.string().min(1),
@@ -356,6 +358,21 @@ const videosRouter = router({
               scrapeError: result.error ?? null,
               scrapedAt: result.scrapedAt,
             });
+            // Auto-fill scraped likes/comments into view_counts for today
+            if (!result.error && (result.likeCount != null || result.commentCountNum != null)) {
+              const countId = `vc_${dbVideoId}_${today}`;
+              const existing = await getLatestViewCountByVideoId(dbVideoId);
+              await insertViewCount({
+                countId,
+                videoId: dbVideoId,
+                date: today,
+                viewCount: existing?.viewCount ?? 0,
+                likes: result.likeCount ?? existing?.likes ?? 0,
+                comments: result.commentCountNum ?? existing?.comments ?? 0,
+                shares: existing?.shares ?? 0,
+                engagementRate: existing?.engagementRate ?? "0",
+              });
+            }
             if (result.error) {
               _bulkJob.errors.push({ videoId: rawId, error: result.error });
               _bulkJob.results.push({ videoId: rawId, status: "error" });
@@ -425,6 +442,21 @@ const videosRouter = router({
         scrapeError: result.error,
         scrapedAt: result.scrapedAt,
       });
+      // Auto-fill scraped likes/comments into view_counts for today
+      if (!result.error && (result.likeCount != null || result.commentCountNum != null)) {
+        const countId = `vc_${input.videoId}_${today}`;
+        const existing = await getLatestViewCountByVideoId(input.videoId);
+        await insertViewCount({
+          countId,
+          videoId: input.videoId,
+          date: today,
+          viewCount: existing?.viewCount ?? 0,
+          likes: result.likeCount ?? existing?.likes ?? 0,
+          comments: result.commentCountNum ?? existing?.comments ?? 0,
+          shares: existing?.shares ?? 0,
+          engagementRate: existing?.engagementRate ?? "0",
+        });
+      }
       return { success: true, result };
     }),
 });
@@ -504,6 +536,10 @@ const shillsRouter = router({
       await deleteShill(input.shillId);
       return { success: true };
     }),
+  // Lightweight count query — always enabled, used to show shill badge in VideoRow without loading full list
+  countByVideo: protectedProcedure
+    .input(z.object({ videoId: z.string() }))
+    .query(({ input }) => getShillCountByVideoId(input.videoId)),
 });
 
 // ─── Admin Router ─────────────────────────────────────────────────────────────
@@ -777,19 +813,20 @@ const channelsRouter = router({
     .input(
       z.object({
         channelInput: z.string().min(1, "Channel URL or handle is required"),
-        influencerName: z.enum(["Levi", "NoBs", "Danielle"]).optional(),
+        influencerName: z.string().optional(),
       })
     )
     .mutation(async ({ input }) => {
       // 1. Resolve channel metadata
       const channelInfo = await resolveChannel(input.channelInput);
 
-      // 2. Persist channel record
+      // 2. Persist channel record — use channelName as the canonical influencerName
+      const resolvedInfluencerName = channelInfo.channelName;
       await upsertChannel({
         channelId: channelInfo.channelId,
         channelHandle: channelInfo.channelHandle,
         channelName: channelInfo.channelName,
-        influencerName: input.influencerName,
+        influencerName: resolvedInfluencerName,
         thumbnailUrl: channelInfo.thumbnailUrl,
         subscriberCount: channelInfo.subscriberCount,
         videoCount: channelInfo.videoCount,
@@ -807,7 +844,7 @@ const channelsRouter = router({
         if (existing) continue;
         await insertVideo({
           videoId: upload.ytVideoId,
-          influencerName: input.influencerName ?? "Unknown",
+          influencerName: resolvedInfluencerName,
           platform: "YouTube",
           channelId: channelInfo.channelId,
           videoUrl: upload.videoUrl,
@@ -893,7 +930,7 @@ const channelsRouter = router({
           // New video discovered
           await insertVideo({
             videoId: upload.ytVideoId,
-            influencerName: channel.influencerName ?? "Unknown",
+            influencerName: channel.channelName,
             platform: "YouTube",
             channelId: input.channelId,
             videoUrl: upload.videoUrl,

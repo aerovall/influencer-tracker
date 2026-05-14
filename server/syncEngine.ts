@@ -302,6 +302,45 @@ export async function generateDailyReport(): Promise<void> {
   const trends = await getViewCountTrends(1);
 
   const totalViewsToday = trends.reduce((sum, t) => sum + Number(t.viewCount), 0);
+  const totalLikesToday = trends.reduce((sum, t) => sum + Number(t.likes ?? 0), 0);
+  const totalCommentsToday = trends.reduce((sum, t) => sum + Number(t.comments ?? 0), 0);
+
+  // Per-channel breakdown
+  const channelMap = new Map<string, { views: number; likes: number; comments: number; videos: typeof trends }>();
+  for (const t of trends) {
+    const key = t.influencerName ?? "Unknown";
+    if (!channelMap.has(key)) channelMap.set(key, { views: 0, likes: 0, comments: 0, videos: [] });
+    const entry = channelMap.get(key)!;
+    entry.views += Number(t.viewCount);
+    entry.likes += Number(t.likes ?? 0);
+    entry.comments += Number(t.comments ?? 0);
+    entry.videos.push(t);
+  }
+
+  // Get shill counts per channel from DB
+  const { getAllShills } = await import("./db");
+  const allShills = await getAllShills();
+  const shillsByChannel = new Map<string, number>();
+  for (const s of allShills) {
+    const key = s.influencerName ?? "Unknown";
+    shillsByChannel.set(key, (shillsByChannel.get(key) ?? 0) + 1);
+  }
+
+  const perChannelSections = Array.from(channelMap.entries())
+    .map(([channelName, data]) => {
+      const top5 = data.videos
+        .sort((a, b) => Number(b.viewCount) - Number(a.viewCount))
+        .slice(0, 5)
+        .map((v) => `  • ${v.title}: ${Number(v.viewCount).toLocaleString()} views`)
+        .join("\n");
+      const sponsorships = shillsByChannel.get(channelName) ?? 0;
+      return `### ${channelName}
+- Views: ${data.views.toLocaleString()}  |  Likes: ${data.likes.toLocaleString()}  |  Comments: ${data.comments.toLocaleString()}  |  Sponsorships: ${sponsorships}
+**Top 5 Videos:**
+${top5 || "  No view data today."}`.trim();
+    })
+    .join("\n\n");
+
   const topVideos = trends
     .sort((a, b) => Number(b.viewCount) - Number(a.viewCount))
     .slice(0, 5)
@@ -312,15 +351,22 @@ export async function generateDailyReport(): Promise<void> {
 
 **Period:** ${yesterdayStr} → ${today}
 **Total Active Videos:** ${stats.total}
-**Total Views Tracked Today:** ${totalViewsToday.toLocaleString()}
+**Total Views Today:** ${totalViewsToday.toLocaleString()}
+**Total Likes Today:** ${totalLikesToday.toLocaleString()}
+**Total Comments Today:** ${totalCommentsToday.toLocaleString()}
 **Average Engagement Rate:** ${Number(avgEng).toFixed(2)}%
 **Unread Alerts:** ${alertCount}
 
-### Top 5 Videos by Views
+### Top 5 Videos by Views (Overall)
 ${topVideos || "No view data available for today."}
 
-### Videos by Influencer
-${stats.byInfluencer.map((r) => `• ${r.influencerName}: ${r.count} videos`).join("\n")}
+---
+
+## Per-Channel Breakdown
+
+${perChannelSections || "No channel data available."}
+
+---
 
 ### Videos by Platform
 ${stats.byPlatform.map((r) => `• ${r.platform}: ${r.count} videos`).join("\n")}`;
@@ -419,7 +465,7 @@ export async function runChannelSync(): Promise<{ newVideos: number; updatedStat
           // New video discovered on this channel
           await insertVideo({
             videoId: upload.ytVideoId,
-            influencerName: channel.influencerName ?? "Unknown",
+            influencerName: channel.channelName,
             platform: "YouTube",
             channelId: channel.channelId,
             videoUrl: upload.videoUrl,

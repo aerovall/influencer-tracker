@@ -215,3 +215,18 @@
 - [x] UI: Channels page top bar — "Bulk Scrape All" button with progress bar (X/Y videos scraped)
 - [x] UI: Show per-video status (scraped / error) in progress panel
 - [x] UI: Auto-refresh comment data after bulk scrape completes
+
+## v2.6 — Bug Fixes (8 issues)
+- [x] Fix 1: Auto-fill scraped likes/comments into view_counts in startBulkScrape (bulk scrape)
+- [x] Fix 2: Auto-fill scraped likes/comments into view_counts in scrapeComments (single video)
+- [x] Fix 3: Remove z.enum(["Levi","NoBs","Danielle"]) from channels.link — influencerName is now free-form z.string()
+- [x] Fix 4: Remove z.enum from videos.create influencerName — now free-form z.string()
+- [x] Fix 5: syncChannel mutation — use channelName instead of channel.influencerName ?? "Unknown"
+- [x] Fix 6: syncEngine.ts runChannelSync — use channelName instead of influencerName ?? "Unknown"
+- [x] Fix 7: Dashboard.tsx — replace hardcoded CHART_COLORS/Levi/NoBs/Danielle with dynamic channel names from trends data
+- [x] Fix 8: Analytics.tsx — replace hardcoded INFLUENCERS/INFLUENCER_COLORS with dynamic channel names
+- [x] Fix 9: Videos.tsx, AdminPanel.tsx — replace hardcoded Levi/NoBs/Danielle dropdowns with dynamic channel list from channels.list query
+- [x] Fix 10: Badges.tsx InfluencerBadge — replace hardcoded Levi/NoBs/Danielle color map with deterministic hash-based color for any channel name
+- [x] Fix 11: VideoRow shill badge — add shills.countByVideo (always-enabled) so badge shows before row is expanded
+- [x] Fix 12: Add getShillCountByVideoId db helper + shills.countByVideo tRPC procedure
+- [x] Fix 13: Update stale vitest tests to reflect free-form influencerName (no enum rejection)

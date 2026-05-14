@@ -345,6 +345,16 @@ export async function getAllShills(filters?: { videoId?: string; brand?: string 
   return query;
 }
 
+export async function getShillCountByVideoId(videoId: string): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(shills)
+    .where(eq(shills.videoId, videoId));
+  return Number(result[0]?.count ?? 0);
+}
+
 export async function insertShill(data: InsertShill) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

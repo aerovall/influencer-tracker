@@ -11,11 +11,21 @@ import { Activity, AlertTriangle, Eye, TrendingUp, Video, Zap } from "lucide-rea
 import { useMemo, useState } from "react";
 import { useLocation } from "wouter";
 
-const CHART_COLORS = {
-  Levi: "oklch(0.78 0.15 80)",
-  NoBs: "oklch(0.65 0.18 200)",
-  Danielle: "oklch(0.70 0.18 150)",
-};
+// Dynamic color palette for any number of channels
+const PALETTE = [
+  "oklch(0.78 0.15 80)",
+  "oklch(0.65 0.18 200)",
+  "oklch(0.70 0.18 150)",
+  "oklch(0.72 0.18 25)",
+  "oklch(0.68 0.18 330)",
+  "oklch(0.75 0.15 140)",
+  "oklch(0.65 0.20 270)",
+  "oklch(0.80 0.12 60)",
+];
+function getChannelColor(name: string, allNames: string[]) {
+  const idx = allNames.indexOf(name);
+  return PALETTE[idx % PALETTE.length] ?? PALETTE[0];
+}
 
 function KpiCard({ title, value, sub, icon: Icon, accent }: {
   title: string; value: string | number; sub?: string; icon: React.ElementType; accent?: string;
@@ -52,19 +62,24 @@ export default function Dashboard() {
   });
   const utils = trpc.useUtils();
 
-  // Build chart data: daily total views grouped by influencer
-  const chartData = useMemo(() => {
-    if (!trends) return [];
+  // Build chart data: daily total views grouped by influencer — dynamic channel names
+  const { chartData, channelNames } = useMemo(() => {
+    if (!trends) return { chartData: [], channelNames: [] as string[] };
     const byDate = new Map<string, Record<string, number>>();
+    const nameSet = new Set<string>();
     for (const row of trends) {
       if (!byDate.has(row.date)) byDate.set(row.date, {});
       const entry = byDate.get(row.date)!;
       entry[row.influencerName] = (entry[row.influencerName] ?? 0) + Number(row.viewCount);
+      nameSet.add(row.influencerName);
     }
-    return Array.from(byDate.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-14)
-      .map(([date, vals]) => ({ date: date.slice(5), ...vals }));
+    return {
+      chartData: Array.from(byDate.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-14)
+        .map(([date, vals]) => ({ date: date.slice(5), ...vals })),
+      channelNames: Array.from(nameSet).sort(),
+    };
   }, [trends]);
 
   // Top 5 videos by latest view count
@@ -138,12 +153,12 @@ export default function Dashboard() {
                     formatter={(v: number) => [formatNumber(v), ""]}
                   />
                   <Legend />
-                  {["Levi", "NoBs", "Danielle"].map((name) => (
+                  {channelNames.map((name) => (
                     <Line
                       key={name}
                       type="monotone"
                       dataKey={name}
-                      stroke={CHART_COLORS[name as keyof typeof CHART_COLORS]}
+                      stroke={getChannelColor(name, channelNames)}
                       strokeWidth={2}
                       dot={false}
                     />

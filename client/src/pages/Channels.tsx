@@ -246,7 +246,10 @@ function VideoRow({ video }: { video: any }) {
   const [expanded, setExpanded] = useState(false);
   const utils = trpc.useUtils();
 
+  // Full shill list — only loaded when row is expanded (avoids N+1 on channel page)
   const { data: shills, refetch } = trpc.shills.list.useQuery({ videoId: video.videoId }, { enabled: expanded });
+  // Lightweight count — always loaded so the badge shows before expanding
+  const { data: shillCount } = trpc.shills.countByVideo.useQuery({ videoId: video.videoId });
   const { data: stats } = trpc.videos.getViewCounts.useQuery({ videoId: video.videoId }, { enabled: true });
   const latestStats = stats?.[stats.length - 1];
 
@@ -317,9 +320,10 @@ function VideoRow({ video }: { video: any }) {
           </div>
         </td>
         <td className="px-4 py-3">
-          {(shills?.length ?? 0) > 0 && (
+          {/* Use shillCount (always loaded) for badge; fall back to shills.length once expanded */}
+          {((expanded ? (shills?.length ?? 0) : (shillCount ?? 0)) > 0) && (
             <Badge variant="outline" className="text-xs border-amber-500/30 text-amber-400 bg-amber-500/5">
-              {shills?.length} shill{shills!.length !== 1 ? "s" : ""}
+              {expanded ? shills?.length : shillCount} shill{(expanded ? (shills?.length ?? 0) : (shillCount ?? 0)) !== 1 ? "s" : ""}
             </Badge>
           )}
         </td>

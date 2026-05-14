@@ -1,7 +1,24 @@
 import { cn } from "@/lib/utils";
 
 type Platform = "YouTube" | "Instagram" | "TikTok";
-type InfluencerName = "Levi" | "NoBs" | "Danielle";
+
+// Deterministic color palette — works for any channel name, not just the original three
+const BADGE_COLORS = [
+  "bg-amber-500/15 text-amber-400 border border-amber-500/25",
+  "bg-sky-500/15 text-sky-400 border border-sky-500/25",
+  "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25",
+  "bg-violet-500/15 text-violet-400 border border-violet-500/25",
+  "bg-rose-500/15 text-rose-400 border border-rose-500/25",
+  "bg-teal-500/15 text-teal-400 border border-teal-500/25",
+  "bg-orange-500/15 text-orange-400 border border-orange-500/25",
+  "bg-indigo-500/15 text-indigo-400 border border-indigo-500/25",
+];
+
+function hashName(name: string): number {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return h;
+}
 
 export function PlatformBadge({ platform, className }: { platform: Platform; className?: string }) {
   const styles: Record<Platform, string> = {
@@ -17,12 +34,7 @@ export function PlatformBadge({ platform, className }: { platform: Platform; cla
 }
 
 export function InfluencerBadge({ name, className }: { name: string; className?: string }) {
-  const styles: Record<string, string> = {
-    Levi: "bg-amber-500/15 text-amber-400 border border-amber-500/25",
-    NoBs: "bg-sky-500/15 text-sky-400 border border-sky-500/25",
-    Danielle: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/25",
-  };
-  const style = styles[name] ?? "bg-slate-500/15 text-slate-400 border border-slate-500/25";
+  const style = BADGE_COLORS[hashName(name) % BADGE_COLORS.length];
   return (
     <span className={cn("inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium", style, className)}>
       {name}

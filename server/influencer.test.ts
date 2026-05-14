@@ -44,6 +44,7 @@ vi.mock("./db", () => ({
   getUnreadAlertCount: vi.fn().mockResolvedValue(0),
   getAllShills: vi.fn().mockResolvedValue([]),
   getShillBrandSummary: vi.fn().mockResolvedValue([]),
+  getShillCountByVideoId: vi.fn().mockResolvedValue(0),
   insertShill: vi.fn().mockResolvedValue(undefined),
   updateShill: vi.fn().mockResolvedValue(undefined),
   deleteShill: vi.fn().mockResolvedValue(undefined),
@@ -267,18 +268,18 @@ describe("videos.create", () => {
     expect(result.videoId).toMatch(/^yt_/);
   });
 
-  it("rejects invalid influencer names", async () => {
+  it("accepts any non-empty string as influencer name (no longer enum-restricted)", async () => {
+    // influencerName is now a free-form z.string() — any non-empty string is valid
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    await expect(
-      caller.videos.create({
-        influencerName: "InvalidName" as "Levi",
-        platform: "YouTube",
-        videoUrl: "https://youtube.com/watch?v=test",
-        title: "Test",
-        publishedDate: "2025-01-01",
-      })
-    ).rejects.toThrow();
+    const result = await caller.videos.create({
+      influencerName: "AnyChannelName",
+      platform: "YouTube",
+      videoUrl: "https://youtube.com/watch?v=test",
+      title: "Test",
+      publishedDate: "2025-01-01",
+    });
+    expect(result.success).toBe(true);
   });
 
   it("rejects invalid platform names", async () => {
@@ -481,15 +482,15 @@ describe("channels.link", () => {
     expect(typeof result.newVideosAdded).toBe("number");
   });
 
-  it("rejects an invalid influencer name", async () => {
+  it("accepts any string as influencerName in channels.link (no longer enum-restricted)", async () => {
+    // influencerName is now optional z.string() — any value or omission is valid
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    await expect(
-      caller.channels.link({
-        channelInput: "@testchannel",
-        influencerName: "Unknown" as "Levi",
-      })
-    ).rejects.toThrow();
+    const result = await caller.channels.link({
+      channelInput: "@testchannel2",
+      influencerName: "AnyName",
+    });
+    expect(result.success).toBe(true);
   });
 });
 

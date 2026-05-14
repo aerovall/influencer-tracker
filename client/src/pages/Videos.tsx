@@ -11,13 +11,15 @@ import { ExternalLink, Plus, Trash2, Eye, ThumbsUp, MessageSquare, Loader2, Chec
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 
-const INFLUENCERS = ["Levi", "NoBs", "Danielle"] as const;
 const PLATFORMS = ["YouTube", "Instagram", "TikTok"] as const;
 
 function AddVideoDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
+  // Load channels dynamically to populate the influencer dropdown
+  const { data: channelList } = trpc.channels.list.useQuery();
+  const channelNames = Array.from(new Set((channelList ?? []).map((c: any) => c.channelName))).sort() as string[];
   const [form, setForm] = useState({
-    influencerName: "Levi" as typeof INFLUENCERS[number],
+    influencerName: "" as string,
     platform: "YouTube" as typeof PLATFORMS[number],
     videoUrl: "",
     title: "",
@@ -87,10 +89,11 @@ function AddVideoDialog({ onSuccess }: { onSuccess: () => void }) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Influencer</Label>
-              <Select value={form.influencerName} onValueChange={(v) => setForm((f) => ({ ...f, influencerName: v as typeof INFLUENCERS[number] }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select value={form.influencerName} onValueChange={(v) => setForm((f) => ({ ...f, influencerName: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select channel" /></SelectTrigger>
                 <SelectContent>
-                  {INFLUENCERS.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
+                  {channelNames.length === 0 && <SelectItem value="manual">No channels yet</SelectItem>}
+                  {channelNames.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -137,7 +140,7 @@ function AddVideoDialog({ onSuccess }: { onSuccess: () => void }) {
           </div>
           <Button
             className="w-full"
-            disabled={create.isPending || ytFetching || !form.videoUrl || !form.title}
+            disabled={create.isPending || ytFetching || !form.videoUrl || !form.title || !form.influencerName || form.influencerName === 'manual'}
             onClick={() => create.mutate(form)}
           >
             {create.isPending ? "Adding..." : "Add Video"}

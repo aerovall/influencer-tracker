@@ -229,6 +229,8 @@ function InfluencerAccountsSection() {
 function AlertThresholdsSection() {
   const utils = trpc.useUtils();
   const { data: thresholds, isLoading } = trpc.admin.listThresholds.useQuery();
+  const { data: channelList } = trpc.channels.list.useQuery();
+  const channelNames = Array.from(new Set((channelList ?? []).map((c: any) => c.channelName))).sort() as string[];
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -307,7 +309,7 @@ function AlertThresholdsSection() {
                     <SelectTrigger><SelectValue placeholder="All" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All</SelectItem>
-                      {["Levi", "NoBs", "Danielle"].map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
+                      {channelNames.map((n) => <SelectItem key={n} value={n}>{n}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>

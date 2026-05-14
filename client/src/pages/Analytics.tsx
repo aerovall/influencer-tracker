@@ -10,15 +10,22 @@ import {
 import { BarChart3, TrendingUp, Eye, ThumbsUp } from "lucide-react";
 import { useMemo, useState } from "react";
 
-const INFLUENCERS = ["All", "Levi", "NoBs", "Danielle"] as const;
 const PLATFORMS = ["All", "YouTube", "Instagram", "TikTok"] as const;
 const DAYS_OPTIONS = [7, 14, 30, 60, 90] as const;
-
-const INFLUENCER_COLORS: Record<string, string> = {
-  Levi: "oklch(0.78 0.15 80)",
-  NoBs: "oklch(0.65 0.18 200)",
-  Danielle: "oklch(0.70 0.18 150)",
-};
+const PALETTE = [
+  "oklch(0.78 0.15 80)",
+  "oklch(0.65 0.18 200)",
+  "oklch(0.70 0.18 150)",
+  "oklch(0.72 0.18 25)",
+  "oklch(0.68 0.18 330)",
+  "oklch(0.75 0.15 140)",
+  "oklch(0.65 0.20 270)",
+  "oklch(0.80 0.12 60)",
+];
+function getChannelColor(name: string, allNames: string[]) {
+  const idx = allNames.indexOf(name);
+  return PALETTE[idx % PALETTE.length] ?? PALETTE[0];
+}
 
 const PLATFORM_COLORS: Record<string, string> = {
   YouTube: "oklch(0.65 0.22 25)",
@@ -37,6 +44,13 @@ export default function Analytics() {
   const [platformFilter, setPlatformFilter] = useState("All");
 
   const { data: trends, isLoading } = trpc.analytics.trends.useQuery({ days });
+
+  // Derive unique channel names dynamically from data
+  const channelNames = useMemo(() => {
+    if (!trends) return [] as string[];
+    return Array.from(new Set(trends.map((r) => r.influencerName))).sort();
+  }, [trends]);
+  const influencerOptions = useMemo(() => ["All", ...channelNames], [channelNames]);
 
   // Filter trends
   const filteredTrends = useMemo(() => {
@@ -142,7 +156,7 @@ export default function Analytics() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {INFLUENCERS.map((n) => <SelectItem key={n} value={n}>{n === "All" ? "All Influencers" : n}</SelectItem>)}
+              {influencerOptions.map((n) => <SelectItem key={n} value={n}>{n === "All" ? "All Influencers" : n}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={platformFilter} onValueChange={setPlatformFilter}>
@@ -190,10 +204,10 @@ export default function Analytics() {
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={viewsByInfluencer}>
                 <defs>
-                  {["Levi", "NoBs", "Danielle"].map((name) => (
+                  {channelNames.map((name) => (
                     <linearGradient key={name} id={`grad-${name}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={INFLUENCER_COLORS[name]} stopOpacity={0.3} />
-                      <stop offset="95%" stopColor={INFLUENCER_COLORS[name]} stopOpacity={0} />
+                      <stop offset="5%" stopColor={getChannelColor(name, channelNames)} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={getChannelColor(name, channelNames)} stopOpacity={0} />
                     </linearGradient>
                   ))}
                 </defs>
@@ -202,12 +216,12 @@ export default function Analytics() {
                 <YAxis tick={{ fontSize: 11, fill: "oklch(0.60 0.02 255)" }} tickFormatter={formatNumber} />
                 <Tooltip {...TOOLTIP_STYLE} formatter={(v: number) => [formatNumber(v), ""]} />
                 <Legend />
-                {["Levi", "NoBs", "Danielle"].map((name) => (
+                {channelNames.map((name) => (
                   <Area
                     key={name}
                     type="monotone"
                     dataKey={name}
-                    stroke={INFLUENCER_COLORS[name]}
+                    stroke={getChannelColor(name, channelNames)}
                     fill={`url(#grad-${name})`}
                     strokeWidth={2}
                   />
