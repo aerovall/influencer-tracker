@@ -316,6 +316,23 @@ function buildSummarySheet(data: any): XLSX.WorkSheet {
   // Spacer after channel table
   rows.push(["", "", "", "", "", ""]);
 
+  // ── Channel Views Bar Chart section ─────────────────────────────────────────
+  // Visual horizontal bar chart using coloured cells — 1 row per channel
+  // Columns: A=Channel Name, B-F=bar segments (each cell = 20% of max)
+  const chartSectionRow = rows.length;
+  rows.push(["CHANNEL VIEWS — VISUAL COMPARISON", "", "", "", "", ""]);
+  // Sort channels by views descending for the chart
+  const chartChannels = [...channelRows].sort((a, b) => (Number(b[2]) || 0) - (Number(a[2]) || 0));
+  const chartMaxViews = Math.max(...chartChannels.map((r) => Number(r[2]) || 0), 1);
+  // 5 bar segments across columns B-F, each represents 20% of max
+  for (const ch of chartChannels) {
+    const viewsVal = Number(ch[2]) || 0;
+    const pct = viewsVal / chartMaxViews; // 0-1
+    rows.push([ch[0], viewsVal, "", "", "", ""]);
+  }
+  // Spacer
+  rows.push(["", "", "", "", "", ""]);
+
   // By-platform section
   const platformSectionRow = rows.length;
   rows.push(["VIDEOS BY PLATFORM", "", "", "", "", ""]);
@@ -380,6 +397,58 @@ function buildSummarySheet(data: any): XLSX.WorkSheet {
       const heat = c === 2 ? heatColour(val, maxViews * 0.33, maxViews * 0.66) : undefined;
       ws[addr].s = dataStyle(i, "right", heat?.bg, heat?.text);
       if (typeof ws[addr].v === "number") ws[addr].z = "#,##0";
+    }
+  }
+
+  // ── Chart section styles ────────────────────────────────────────────
+  // Chart section header
+  ws["!merges"].push({ s: { r: chartSectionRow, c: 0 }, e: { r: chartSectionRow, c: 5 } });
+  const chartHdrAddr = XLSX.utils.encode_cell({ r: chartSectionRow, c: 0 });
+  if (ws[chartHdrAddr]) ws[chartHdrAddr].s = sectionHeaderStyle("2563EB"); // bright blue
+
+  // Chart bar rows — use coloured fill cells to simulate a horizontal bar chart
+  // 5 bar columns (B-F), each represents 20% of chartMaxViews
+  const BAR_COLS = 5; // columns 1-5 (B through F)
+  for (let i = 0; i < chartChannels.length; i++) {
+    const r = chartSectionRow + 1 + i;
+    const chAccent = CHANNEL_ACCENTS[i % CHANNEL_ACCENTS.length];
+    const viewsVal = Number(chartChannels[i][2]) || 0;
+    const pct = viewsVal / chartMaxViews; // 0.0 to 1.0
+    const filledCols = Math.round(pct * BAR_COLS); // 0 to 5 filled segments
+
+    // Column A: channel name label
+    const nameAddr = XLSX.utils.encode_cell({ r, c: 0 });
+    if (!ws[nameAddr]) ws[nameAddr] = { t: "s", v: chartChannels[i][0] };
+    ws[nameAddr].s = {
+      font:      { bold: true, sz: 11, name: "Calibri", color: { rgb: WHITE } },
+      fill:      { fgColor: { rgb: chAccent }, patternType: "solid" },
+      alignment: { horizontal: "left", vertical: "center" },
+      border: { top: { style: "thin", color: { rgb: BORDER_CLR } }, bottom: { style: "thin", color: { rgb: BORDER_CLR } }, left: { style: "thin", color: { rgb: BORDER_CLR } }, right: { style: "thin", color: { rgb: BORDER_CLR } } },
+    };
+
+    // Column B: views value label
+    const valAddr = XLSX.utils.encode_cell({ r, c: 1 });
+    if (!ws[valAddr]) ws[valAddr] = { t: "n", v: viewsVal };
+    ws[valAddr].s = {
+      font:      { bold: true, sz: 10, name: "Calibri", color: { rgb: "1A1A2E" } },
+      fill:      { fgColor: { rgb: "EFF6FF" }, patternType: "solid" },
+      alignment: { horizontal: "right", vertical: "center" },
+      border: { top: { style: "thin", color: { rgb: BORDER_CLR } }, bottom: { style: "thin", color: { rgb: BORDER_CLR } }, left: { style: "thin", color: { rgb: BORDER_CLR } }, right: { style: "thin", color: { rgb: BORDER_CLR } } },
+    };
+    ws[valAddr].z = "#,##0";
+
+    // Columns C-G (indices 2-6): bar segments
+    for (let c = 2; c < 2 + BAR_COLS; c++) {
+      const barAddr = XLSX.utils.encode_cell({ r, c });
+      const segIdx = c - 2; // 0-4
+      const isFilled = segIdx < filledCols;
+      if (!ws[barAddr]) ws[barAddr] = { t: "s", v: isFilled ? " " : "" };
+      ws[barAddr].s = {
+        font:      { sz: 10, name: "Calibri", color: { rgb: isFilled ? chAccent : BORDER_CLR } },
+        fill:      { fgColor: { rgb: isFilled ? chAccent : "F8FAFC" }, patternType: "solid" },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: { top: { style: "thin", color: { rgb: BORDER_CLR } }, bottom: { style: "thin", color: { rgb: BORDER_CLR } }, left: { style: "thin", color: { rgb: BORDER_CLR } }, right: { style: "thin", color: { rgb: BORDER_CLR } } },
+      };
     }
   }
 
@@ -512,15 +581,23 @@ function buildViewCountsSheet(viewCounts: any[], videos: any[]): XLSX.WorkSheet 
   const likePerc = computePercentiles(likeValues);
   const commentPerc = computePercentiles(commentValues);
 
+  // Build a YouTube URL from videoId (strip yt_ prefix)
+  function ytUrl(videoId: string): string {
+    const id = videoId.replace(/^yt_/, "");
+    return `https://www.youtube.com/watch?v=${id}`;
+  }
+
   const rows = sorted.map((vc) => {
     const videoObj = videoMap.get(vc.videoId);
+    // Show title if available, otherwise construct a readable ID from the raw videoId
+    const displayTitle = videoObj?.title ?? (vc.videoId ? vc.videoId.replace(/^yt_/, "") : "");
     return [
-      videoObj?.title ?? videoObj?.videoId ?? vc.videoId ?? "",
+      displayTitle,
       videoObj?.influencerName ?? "",
       fmtDate(vc.date),
-      fmtNum(vc.viewCount),
-      fmtNum(vc.likes),
-      fmtNum(vc.comments),
+      Number(vc.viewCount ?? 0),
+      Number(vc.likes ?? 0),
+      Number(vc.comments ?? 0),
     ];
   });
 
@@ -544,9 +621,10 @@ function buildViewCountsSheet(viewCounts: any[], videos: any[]): XLSX.WorkSheet 
       ws[addr].s = dataStyle(i, align, heat?.bg, heat?.text);
       if (numericCols.includes(c) && typeof ws[addr].v === "number") ws[addr].z = "#,##0";
 
-      // Add hyperlink on title column
-      if (c === 0 && videoObj?.videoUrl) {
-        ws[addr].l = { Target: videoObj.videoUrl, Tooltip: videoObj.title ?? "" };
+      // Add hyperlink on title column — use video URL if available, else construct YouTube URL
+      const linkUrl = videoObj?.videoUrl || ytUrl(vc.videoId ?? "");
+      if (c === 0 && linkUrl) {
+        ws[addr].l = { Target: linkUrl, Tooltip: videoObj?.title ?? vc.videoId ?? "" };
         ws[addr].s = { ...ws[addr].s, font: { ...ws[addr].s.font, underline: true, color: { rgb: "1A3A8F" } } };
       }
     }
@@ -707,9 +785,9 @@ function buildChannelsSheet(channels: any[]): XLSX.WorkSheet {
 
 function buildTopVideosSheet(videos: any[]): XLSX.WorkSheet {
   const accent = ACCENT.performance;
-  // Removed: Engagement % column
+  // Removed: Engagement % and Medal columns
   const headers = [
-    "Rank", "Medal", "Title", "Channel", "Platform",
+    "Rank", "Title", "Channel", "Platform",
     "Views", "Likes", "Comments", "Published",
   ];
 
@@ -718,17 +796,14 @@ function buildTopVideosSheet(videos: any[]): XLSX.WorkSheet {
     .sort((a, b) => Number(b.viewCount ?? 0) - Number(a.viewCount ?? 0))
     .slice(0, 20);
 
-  const medals = ["🥇", "🥈", "🥉"];
-
   const rows = top20.map((v, i) => [
     i + 1,
-    medals[i] ?? `#${i + 1}`,
     v.title ?? "",
     v.influencerName ?? "",
     v.platform ?? "",
-    fmtNum(v.viewCount),
-    fmtNum(v.likes),
-    fmtNum(v.comments),
+    Number(v.viewCount ?? 0),
+    Number(v.likes ?? 0),
+    Number(v.comments ?? 0),
     fmtDate(v.publishedDate),
   ]);
 
@@ -736,23 +811,30 @@ function buildTopVideosSheet(videos: any[]): XLSX.WorkSheet {
   applyHeaderRow(ws, headers.length, accent);
 
   const viewValues = top20.map((v) => Number(v.viewCount ?? 0));
+  const likeValues = top20.map((v) => Number(v.likes ?? 0));
+  const commentValues = top20.map((v) => Number(v.comments ?? 0));
   const viewPerc = computePercentiles(viewValues);
+  const likePerc = computePercentiles(likeValues);
+  const commentPerc = computePercentiles(commentValues);
 
   for (let i = 0; i < rows.length; i++) {
     const r = i + 1;
     for (let c = 0; c < headers.length; c++) {
       const addr = XLSX.utils.encode_cell({ r, c });
       if (!ws[addr]) ws[addr] = { t: "z" };
-      const align = [0, 5, 6, 7].includes(c) ? "right" : (c === 1 ? "center" : "left");
+      // cols: 0=Rank, 1=Title, 2=Channel, 3=Platform, 4=Views, 5=Likes, 6=Comments, 7=Published
+      const align = [0, 4, 5, 6].includes(c) ? "right" : "left";
 
       const rankHeat = c === 0 ? rankColour(i + 1) : null;
-      const viewHeat = c === 5 ? heatColour(Number(rows[i][5]) || 0, viewPerc.p33, viewPerc.p66) : null;
+      const viewHeat = c === 4 ? heatColour(Number(rows[i][4]) || 0, viewPerc.p33, viewPerc.p66) : null;
+      const likeHeat = c === 5 ? heatColour(Number(rows[i][5]) || 0, likePerc.p33, likePerc.p66) : null;
+      const commentHeat = c === 6 ? heatColour(Number(rows[i][6]) || 0, commentPerc.p33, commentPerc.p66) : null;
 
-      ws[addr].s = dataStyle(i, align, rankHeat?.bg ?? viewHeat?.bg, rankHeat?.text ?? viewHeat?.text);
-      if ([0, 5, 6, 7].includes(c) && typeof ws[addr].v === "number") ws[addr].z = "#,##0";
+      ws[addr].s = dataStyle(i, align, rankHeat?.bg ?? viewHeat?.bg ?? likeHeat?.bg ?? commentHeat?.bg, rankHeat?.text ?? viewHeat?.text ?? likeHeat?.text ?? commentHeat?.text);
+      if ([0, 4, 5, 6].includes(c) && typeof ws[addr].v === "number") ws[addr].z = "#,##0";
 
-      // Hyperlink on Title column (c === 2)
-      if (c === 2 && top20[i]?.videoUrl) {
+      // Hyperlink on Title column (c === 1)
+      if (c === 1 && top20[i]?.videoUrl) {
         ws[addr].l = { Target: top20[i].videoUrl, Tooltip: top20[i].title ?? "" };
         if (!rankHeat && !viewHeat) {
           ws[addr].s = { ...ws[addr].s, font: { ...ws[addr].s.font, underline: true, color: { rgb: "1A3A8F" } } };
@@ -762,7 +844,7 @@ function buildTopVideosSheet(videos: any[]): XLSX.WorkSheet {
   }
 
   freezeHeader(ws);
-  setCols(ws, [7, 7, 55, 22, 12, 14, 10, 10, 14]);
+  setCols(ws, [7, 55, 22, 12, 14, 10, 10, 14]);
   ws["!rows"] = [{ hpt: 22 }];
   return ws;
 }
@@ -1074,9 +1156,7 @@ export function downloadDashboardExcel(data: any) {
   XLSX.utils.book_append_sheet(wb, buildViewCountsSheet(data.viewCounts ?? [], data.videos ?? []), "📈 View Counts");
   XLSX.utils.book_append_sheet(wb, buildSponsorshipsSheet(data.sponsorships ?? [], data.videos ?? []), "💰 Sponsorships");
   XLSX.utils.book_append_sheet(wb, buildChannelsSheet(data.channels ?? []),         "📡 Channels");
-  if ((data.reports ?? []).length > 0) {
-    XLSX.utils.book_append_sheet(wb, buildDailyReportsSheet(data.reports ?? []),    "📅 Daily Reports");
-  }
+  // Daily/Weekly Report sheets removed per user request
 
   const dateStr = new Date().toISOString().split("T")[0];
   XLSX.writeFile(wb, `influencer-tracker-${dateStr}.xlsx`, { cellStyles: true });

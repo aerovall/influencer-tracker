@@ -667,6 +667,17 @@ const analyticsRouter = router({
     }
     const channelStats = Array.from(channelStatsMap.entries()).map(([channelName, cs]) => ({ channelName, ...cs }));
 
+    // Enrich each video with its latest view count stats for use in Top Videos / All Videos sheets
+    const enrichedVideos = allVideos.map((v) => {
+      const vc = latestByVideo.get(v.videoId);
+      return {
+        ...v,
+        viewCount: vc ? Number(vc.viewCount ?? 0) : 0,
+        likes: vc ? Number(vc.likes ?? 0) : 0,
+        comments: vc ? Number(vc.comments ?? 0) : 0,
+      };
+    });
+
     return {
       exportedAt: new Date().toISOString(),
       summary: {
@@ -679,7 +690,7 @@ const analyticsRouter = router({
         byPlatform: stats.byPlatform,
         channelStats,
       },
-      videos: allVideos,
+      videos: enrichedVideos,
       viewCounts: allViewCounts,
       sponsorships: allShills,
       channels: allChannels,

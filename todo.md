@@ -328,3 +328,22 @@
 - [x] Top Videos: remove "Engagement %" column
 - [x] Top Videos: fix missing Views/Likes/Comments data (showing empty cells)
 - [x] All Videos: replace video ID/title with actual video name + hyperlink to video URL
+
+## v2.22 — Excel Final Fix
+- [ ] Fix: View Counts sheet still shows raw yt_xxx IDs — exportStats must join viewCounts with videos to populate title
+- [ ] Fix: Top Videos sheet has empty Views/Likes/Comments — exportStats videos must include latest viewCount/likes/comments from view_counts table
+- [ ] Fix: All Videos sheet has empty Views/Likes/Comments — same join needed
+- [ ] Fix: Top Videos sheet — remove Medal row/column (just show rank number)
+- [ ] Remove: Daily Reports sheet from Excel export
+- [ ] Remove: Weekly Reports sheet from Excel export (if present)
+- [ ] Add: Channel Views bar chart to Summary sheet (horizontal bars per channel, views comparison)
+
+## v2.22 — Excel Final Fix
+- [x] Top Videos: remove Medal column (keep rank number only)
+- [x] Top Videos: fix missing Views/Likes/Comments data (now from enrichedVideos with heat-map colouring)
+- [x] View Counts: fix video ID display — strip yt_ prefix, always show YouTube hyperlink
+- [x] View Counts: deduplicate to latest snapshot per video only
+- [x] Remove Daily Reports and Weekly Reports sheets from workbook
+- [x] Summary: add Channel Views visual bar chart section (coloured cell bars per channel, sorted by views)
+- [x] All Videos: fix missing viewCount/likes/comments (from enrichedVideos)
+- [x] Sponsorships: video name + hyperlink instead of raw ID
