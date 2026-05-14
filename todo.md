@@ -287,3 +287,10 @@
 - [x] Render report content as proper HTML (parse markdown bold/headers/bullets) instead of raw text
 - [x] Add delete button per report row with confirmation dialog
 - [x] Remove raw markdown symbols from report detail view
+
+## v2.16 — Excel Export Date Range Filter
+- [x] Backend: update exportStats to accept optional dateFrom/dateTo filter params
+- [x] Backend: filter videos, viewCounts, sponsorships by date range in exportStats
+- [x] Frontend: build ExportExcelDialog component with preset buttons (Last 7d, 30d, 90d, All Time) and custom date range picker
+- [x] Frontend: wire date range selection to exportStats query and downloadDashboardExcel
+- [x] Frontend: replace plain Export Excel button on Dashboard with dialog trigger

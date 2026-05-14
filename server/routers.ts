@@ -622,10 +622,17 @@ const analyticsRouter = router({
   }),
 
   /** Returns all data needed to build the Dashboard Excel export. */
-  exportStats: protectedProcedure.query(async () => {
+  exportStats: protectedProcedure
+    .input(z.object({
+      dateFrom: z.string().optional(),  // ISO date string e.g. "2026-01-01"
+      dateTo:   z.string().optional(),  // ISO date string e.g. "2026-05-14"
+    }).optional())
+    .query(async ({ input }) => {
+    const dateFrom = input?.dateFrom;
+    const dateTo   = input?.dateTo;
     const [allVideos, allViewCounts, allShills, allChannels, stats, totalViews, avgEng] = await Promise.all([
-      getAllVideos(),
-      getAllViewCounts(),
+      getAllVideos(dateFrom || dateTo ? { dateFrom, dateTo } : undefined),
+      getAllViewCounts({ dateFrom, dateTo }),
       getAllShills(),
       getAllChannels(),
       getVideoStats(),

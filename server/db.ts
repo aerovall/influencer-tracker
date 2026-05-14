@@ -226,10 +226,15 @@ export async function getViewCountsByVideoId(videoId: string) {
     .orderBy(viewCounts.date, desc(viewCounts.viewCount));
 }
 
-export async function getAllViewCounts() {
+export async function getAllViewCounts(filters?: { dateFrom?: string; dateTo?: string }) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(viewCounts).orderBy(viewCounts.videoId, viewCounts.date);
+  const conditions = [];
+  if (filters?.dateFrom) conditions.push(gte(viewCounts.date, filters.dateFrom));
+  if (filters?.dateTo)   conditions.push(lte(viewCounts.date, filters.dateTo));
+  const query = db.select().from(viewCounts).orderBy(viewCounts.videoId, viewCounts.date);
+  if (conditions.length > 0) return query.where(and(...conditions));
+  return query;
 }
 
 export async function getLatestViewCountByVideoId(videoId: string) {
