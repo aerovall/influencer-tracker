@@ -305,3 +305,10 @@
 - [x] Report: make the best video (highest views in last 10) stand out with white bold text
 - [x] Report: update generateDailyReport to include likes/comments per video and isBest flag
 - [x] Excel: add "Daily Report" sheet to export with channel breakdown, top videos, likes/comments
+
+## v2.19 — Excel Visual Enhancements
+- [x] View Counts sheet: replace video_id column with video title (join via videos list)
+- [x] View Counts sheet: remove shares and engagement_rate columns
+- [x] Daily Reports sheet: add visual bar chart section (Unicode bars per channel, sorted ascending by views)
+- [x] Daily Reports sheet: add per-video table sorted by views ascending (video name, views, likes, comments)
+- [x] Daily Reports sheet: remove funnel/triangle visual and ad spend/revenue columns
