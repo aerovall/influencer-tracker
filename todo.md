@@ -312,3 +312,8 @@
 - [x] Daily Reports sheet: add visual bar chart section (Unicode bars per channel, sorted ascending by views)
 - [x] Daily Reports sheet: add per-video table sorted by views ascending (video name, views, likes, comments)
 - [x] Daily Reports sheet: remove funnel/triangle visual and ad spend/revenue columns
+
+## v2.20 — Fix Admin Panel Legacy Export
+- [x] Find and replace Admin Panel legacy "Download .xlsx" with the rich downloadDashboardExcel builder
+- [x] Ensure all video IDs replaced with titles, shares/engagement_rate removed
+- [x] Remove the old Admin Panel export description showing raw column names

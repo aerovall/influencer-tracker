@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { ExportExcelDialog } from "@/components/ExportExcelDialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -447,70 +448,39 @@ function SyncControlsSection() {
 
 // ─── Excel Export Section ─────────────────────────────────────────────────────
 function ExcelExportSection() {
-  const [exporting, setExporting] = useState(false);
-  const { data: videos } = trpc.videos.list.useQuery({});
-  const { data: shills } = trpc.shills.list.useQuery({});
-  // We'll fetch view counts for all videos via individual queries — but for export
-  // we use a server-side approach: the export endpoint fetches all view counts.
-  // For client-side export, we collect from the videos list (view counts are embedded
-  // in the latest snapshot shown on the Videos page). A dedicated export route is
-  // the cleanest approach, so we call the export tRPC procedure.
-  const exportAll = trpc.export.allData.useQuery(undefined, { enabled: false });
-
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      // Fetch all data including view counts
-      const result = await exportAll.refetch();
-      if (!result.data) throw new Error("Failed to fetch export data");
-      const { videoRows, viewCountRows, shillRows } = result.data;
-
-      // Dynamic import to keep bundle lean
-      const XLSX = await import("xlsx");
-
-      const wb = XLSX.utils.book_new();
-      // Sheet 1: Videos — exact schema field names
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(videoRows), "Videos");
-      // Sheet 2: View Counts — exact schema field names
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(viewCountRows), "View Counts");
-      // Sheet 3: Shills — exact schema field names
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shillRows), "Shills");
-
-      const date = new Date().toISOString().split("T")[0];
-      XLSX.writeFile(wb, `influencer-tracker-export-${date}.xlsx`);
-      toast.success("Export downloaded successfully");
-    } catch (err) {
-      toast.error("Export failed: " + String(err));
-    } finally {
-      setExporting(false);
-    }
-  };
-
   return (
     <div className="space-y-4">
       <div>
         <h3 className="font-semibold">Excel Export</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">Download the current Videos and Shills tables as a formatted .xlsx file</p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Download a fully formatted Excel workbook with colour-coded tables, visual bar charts,
+          and per-channel breakdowns. Includes Summary, Top Videos, All Videos, View Counts,
+          Sponsorships, Channels, and Daily Reports sheets.
+        </p>
       </div>
       <div className="bg-muted/20 border border-border/50 rounded-lg p-4 space-y-3">
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
-            <p className="font-medium">Sheet 1: Videos</p>
-            <p className="text-xs text-muted-foreground mt-0.5">video_id, influencer_name, platform, video_url, title, published_date, date_added</p>
+            <p className="font-medium">Sheets included</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Summary · Top Videos · All Videos · View Counts · Sponsorships · Channels · Daily Reports</p>
           </div>
           <div>
-            <p className="font-medium">Sheet 2: View Counts</p>
-            <p className="text-xs text-muted-foreground mt-0.5">count_id, video_id, date, view_count, likes, comments, shares, engagement_rate</p>
+            <p className="font-medium">Visual features</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Heat-map colours · Unicode bar charts · Channel accent colours · Gold ★ BEST rows</p>
           </div>
           <div>
-            <p className="font-medium">Sheet 3: Shills</p>
-            <p className="text-xs text-muted-foreground mt-0.5">shill_id, video_id, product_brand, timestamp, length_seconds, promo_type, notes</p>
+            <p className="font-medium">Date range filter</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Last 7d / 14d / 30d / 90d or custom calendar range</p>
           </div>
         </div>
-        <Button className="gap-2" disabled={exporting} onClick={handleExport}>
-          <Download className="h-4 w-4" />
-          {exporting ? "Exporting..." : "Download .xlsx"}
-        </Button>
+        <ExportExcelDialog
+          trigger={
+            <Button className="gap-2">
+              <Download className="h-4 w-4" />
+              Download .xlsx
+            </Button>
+          }
+        />
       </div>
     </div>
   );
