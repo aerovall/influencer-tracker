@@ -491,7 +491,7 @@ function CommentPanel({ videoId }: { videoId: string }) {
 function ChannelCard({ channel }: { channel: any }) {
   const utils = trpc.useUtils();
   const [expanded, setExpanded] = useState(false);
-  const [scrapePolling, setScrapePolling] = useState(false);
+  // Track whether we've already shown the completion toast to avoid duplicates
   const prevScrapeStatusRef = useRef<string>("idle");
 
   const { data: videos, isLoading: videosLoading } = trpc.channels.listByChannel.useQuery(
@@ -499,31 +499,43 @@ function ChannelCard({ channel }: { channel: any }) {
     { enabled: expanded }
   );
 
-  // Per-channel scrape job polling
+  // Per-channel scrape job polling.
+  // IMPORTANT: polling is driven entirely by the *data* status (not a separate boolean state)
+  // so that toggling the Videos dropdown (which re-renders the component) never stops polling.
   const { data: channelScrapeStatus } = trpc.videos.channelScrapeStatus.useQuery(
     { channelId: channel.channelId },
-    { refetchInterval: scrapePolling ? 2000 : false, staleTime: 0 }
+    {
+      // Poll every 2s while the server-side job is running; stop automatically when done/error.
+      refetchInterval: (query) => {
+        const status = (query.state.data as any)?.status;
+        return status === "running" ? 2000 : false;
+      },
+      // Keep the last known data while re-fetching so the progress bar never disappears.
+      staleTime: 30_000,
+    }
   );
   const startChannelScrape = trpc.videos.startChannelScrape.useMutation({
     onSuccess: (res) => {
       if ((res as any).alreadyRunning) {
         toast.info("A scrape is already running for this channel.");
       } else {
-        setScrapePolling(true);
+        // Immediately refetch so the progress bar appears without waiting 2s.
+        utils.videos.channelScrapeStatus.invalidate({ channelId: channel.channelId });
         const total = (res as any).total ?? 0;
         toast.info(`Scraping ${total} video${total !== 1 ? "s" : ""} for ${channel.channelName}...`);
       }
     },
     onError: (e) => toast.error(`Scrape failed: ${e.message}`),
   });
-  // Watch for per-channel scrape completion
+  // Fire completion toast exactly once when status transitions running → done/error.
   useEffect(() => {
     if (!channelScrapeStatus) return;
     const prev = prevScrapeStatusRef.current;
-    if (prev === "running" && channelScrapeStatus.status === "done") {
-      setScrapePolling(false);
+    if (prev === "running" && (channelScrapeStatus.status === "done" || channelScrapeStatus.status === "error")) {
       const errCount = channelScrapeStatus.errors.length;
-      if (errCount > 0) {
+      if (channelScrapeStatus.status === "error") {
+        toast.error(`Scrape failed for ${channel.channelName}.`);
+      } else if (errCount > 0) {
         toast.warning(`Scrape done — ${channelScrapeStatus.done} scraped, ${errCount} error${errCount !== 1 ? "s" : ""}`);
       } else {
         toast.success(`Scrape complete — ${channelScrapeStatus.done} video${channelScrapeStatus.done !== 1 ? "s" : ""} updated!`);
@@ -532,7 +544,6 @@ function ChannelCard({ channel }: { channel: any }) {
       utils.videos.getCommentDataBulk.invalidate();
       utils.channels.listByChannel.invalidate({ channelId: channel.channelId });
     }
-    if (channelScrapeStatus.status === "running") setScrapePolling(true);
     prevScrapeStatusRef.current = channelScrapeStatus.status;
   }, [channelScrapeStatus?.status, channelScrapeStatus?.done]);
   const isChannelScraping = channelScrapeStatus?.status === "running";
