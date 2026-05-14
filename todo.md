@@ -267,3 +267,10 @@
 ## v2.12 — Dashboard KPI + Snapshot Fix
 - [x] Remove "Avg Engagement" KPI card from Dashboard
 - [x] Fix: Snapshot Views (runViewCountSnapshot) uses insertViewCountPreserveScrape so scraped likes/comments are never overwritten with 0
+
+## v2.14 — Reports Visual Redesign + Delete
+- [x] Add deleteReport tRPC procedure and DB helper
+- [x] Redesign Reports page: newsletter-style layout, clean stat chips (remove Alerts/Avg Engagement, add Likes/Comments/Top Channel)
+- [x] Render report content as proper HTML (parse markdown bold/headers/bullets) instead of raw text
+- [x] Add delete button per report row with confirmation dialog
+- [x] Remove raw markdown symbols from report detail view

@@ -19,6 +19,7 @@ import {
   getAllInfluencers,
   getAllPlatformAccounts,
   getAllReports,
+  deleteReport,
   getAllShills,
   getAllVideos,
   getAllViewCounts,
@@ -871,6 +872,12 @@ const adminRouter = router({
 // ─── Reports Router ───────────────────────────────────────────────────────────
 const reportsRouter = router({
   list: protectedProcedure.query(() => getAllReports(30)),
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteReport(input.id);
+      return { success: true };
+    }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))

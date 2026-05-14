@@ -528,6 +528,12 @@ export async function getUnreadAlertCount() {
 }
 
 // ─── Reports ──────────────────────────────────────────────────────────────────
+export async function deleteReport(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(reports).where(eq(reports.id, id));
+}
+
 export async function getAllReports(limit = 30) {
   const db = await getDb();
   if (!db) return [];

@@ -6,12 +6,97 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   FileText, RefreshCw, Calendar, TrendingUp, Eye,
-  AlertTriangle, BarChart2, Clock, ChevronRight, Zap,
+  AlertTriangle, BarChart2, Clock, ChevronRight, Zap, Trash2, Video,
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { formatNumber } from "@/components/Badges";
+
+// ─── Markdown renderer ────────────────────────────────────────────────────────
+function parseBold(text: string): string {
+  return text.replace(/\*\*(.+?)\*\*/g, '<strong class="text-foreground font-semibold">$1</strong>');
+}
+
+function renderMarkdown(md: string): React.ReactNode[] {
+  const lines = md.split("\n");
+  const nodes: React.ReactNode[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.startsWith("## ")) {
+      nodes.push(
+        <h2 key={i} className="text-base font-bold text-foreground mt-6 mb-2 pb-1 border-b border-border/40 first:mt-0">
+          {line.slice(3)}
+        </h2>
+      );
+    } else if (line.startsWith("### ")) {
+      nodes.push(
+        <h3 key={i} className="text-xs font-semibold text-amber-400 mt-4 mb-1.5 uppercase tracking-widest">
+          {line.slice(4)}
+        </h3>
+      );
+    } else if (line.trim() === "---") {
+      nodes.push(<hr key={i} className="border-border/30 my-4" />);
+    } else if ((line.startsWith("• ") || line.startsWith("- ")) && line.includes("|")) {
+      const parts = line.slice(2).split("|").map(s => s.trim());
+      nodes.push(
+        <div key={i} className="flex flex-wrap gap-2 my-1.5">
+          {parts.map((p, pi) => {
+            const colonIdx = p.indexOf(":");
+            if (colonIdx === -1) return <span key={pi} className="text-xs text-muted-foreground">{p}</span>;
+            const label = p.slice(0, colonIdx).trim();
+            const val = p.slice(colonIdx + 1).trim();
+            return (
+              <span key={pi} className="inline-flex items-center gap-1 text-xs bg-muted/40 border border-border/30 rounded-md px-2 py-0.5">
+                <span className="text-muted-foreground">{label}:</span>
+                <span className="font-semibold text-foreground">{val}</span>
+              </span>
+            );
+          })}
+        </div>
+      );
+    } else if (line.startsWith("• ") || line.startsWith("- ")) {
+      const text = line.slice(2);
+      nodes.push(
+        <div key={i} className="flex gap-2 text-sm text-muted-foreground py-0.5">
+          <span className="text-amber-400/60 shrink-0 mt-0.5">•</span>
+          <span dangerouslySetInnerHTML={{ __html: parseBold(text) }} />
+        </div>
+      );
+    } else if (line.startsWith("  • ") || line.startsWith("  - ")) {
+      nodes.push(
+        <div key={i} className="flex gap-2 text-xs text-muted-foreground pl-4 py-0.5">
+          <span className="text-amber-400/40 shrink-0">›</span>
+          <span>{line.slice(4)}</span>
+        </div>
+      );
+    } else if (line.startsWith("**") && line.includes(":**")) {
+      const colonIdx = line.indexOf(":**");
+      const key = line.slice(2, colonIdx);
+      const value = line.slice(colonIdx + 3).trim();
+      nodes.push(
+        <div key={i} className="flex gap-2 text-sm py-0.5">
+          <span className="text-muted-foreground/70 shrink-0 min-w-[130px]">{key}</span>
+          <span className="text-foreground font-medium">{value}</span>
+        </div>
+      );
+    } else if (line.trim() === "") {
+      nodes.push(<div key={i} className="h-1" />);
+    } else {
+      nodes.push(
+        <p key={i} className="text-sm text-muted-foreground py-0.5"
+          dangerouslySetInnerHTML={{ __html: parseBold(line) }} />
+      );
+    }
+    i++;
+  }
+  return nodes;
+}
 
 function fmtDate(val: string | Date | null | undefined) {
   if (!val) return "—";
@@ -110,9 +195,13 @@ function ReportDetailDialog({ reportId, onClose }: { reportId: number | null; on
               label="Total Views" value={formatNumber(report.totalViews ?? 0)}
               accent="border-sky-500/20 bg-sky-500/5" />
             <StatChip
-              icon={<TrendingUp className="h-3.5 w-3.5 text-emerald-400" />}
-              label="Avg Engagement" value={`${Number(report.avgEngagementRate ?? 0).toFixed(2)}%`}
+              icon={<Video className="h-3.5 w-3.5 text-emerald-400" />}
+              label="Active Videos" value={report.totalVideos ?? 0}
               accent="border-emerald-500/20 bg-emerald-500/5" />
+            <StatChip
+              icon={<TrendingUp className="h-3.5 w-3.5 text-violet-400" />}
+              label="Avg Engagement" value={`${Number(report.avgEngagementRate ?? 0).toFixed(2)}%`}
+              accent="border-violet-500/20 bg-violet-500/5" />
             <StatChip
               icon={<AlertTriangle className="h-3.5 w-3.5 text-amber-400" />}
               label="Alerts Triggered" value={report.alertsTriggered ?? 0}
@@ -125,9 +214,9 @@ function ReportDetailDialog({ reportId, onClose }: { reportId: number | null; on
               {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-4 w-full" />)}
             </div>
           ) : report ? (
-            <pre className="text-sm text-foreground whitespace-pre-wrap font-sans leading-7">
-              {report.content}
-            </pre>
+            <div className="space-y-0.5">
+              {renderMarkdown(report.content)}
+            </div>
           ) : null}
         </div>
       </DialogContent>
@@ -135,12 +224,14 @@ function ReportDetailDialog({ reportId, onClose }: { reportId: number | null; on
   );
 }
 
-function ReportRow({ report, onClick }: { report: any; onClick: () => void }) {
+function ReportRow({ report, onClick, onDelete }: { report: any; onClick: () => void; onDelete: () => void }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   return (
-    <button onClick={onClick}
+    <>
+    <div onClick={onClick}
       className="w-full text-left group rounded-xl border border-border/40 bg-card/60
                  hover:border-primary/40 hover:bg-card/90 transition-all duration-150 p-4
-                 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
+                 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">
       <div className="flex items-center gap-4">
         <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0
                         group-hover:bg-primary/20 transition-colors">
@@ -179,9 +270,44 @@ function ReportRow({ report, onClick }: { report: any; onClick: () => void }) {
             <p className="text-xs text-muted-foreground mt-1">{relativeTime(report.createdAt)}</p>
           </div>
         </div>
-        <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0" />
+          {/* Delete button — visible on hover */}
+          <div
+            className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0" />
       </div>
-    </button>
+    </div>
+
+    <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this report?</AlertDialogTitle>
+          <AlertDialogDescription>
+            <strong>{report.title}</strong> will be permanently deleted. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => { setConfirmDelete(false); onDelete(); }}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
 
@@ -220,6 +346,10 @@ export default function Reports() {
   });
   const generateWeekly = trpc.reports.generateWeekly.useMutation({
     onSuccess: () => { toast.success("Weekly report generated"); utils.reports.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteReport = trpc.reports.delete.useMutation({
+    onSuccess: () => { toast.success("Report deleted"); utils.reports.list.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -292,7 +422,7 @@ export default function Reports() {
                 </div>
                 <div className="space-y-2">
                   {group.map((report) => (
-                    <ReportRow key={report.id} report={report} onClick={() => setSelectedReport(report.id)} />
+                    <ReportRow key={report.id} report={report} onClick={() => setSelectedReport(report.id)} onDelete={() => deleteReport.mutate({ id: report.id })} />
                   ))}
                 </div>
               </div>
