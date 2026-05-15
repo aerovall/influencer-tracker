@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { InfluencerBadge, PlatformBadge } from "@/components/Badges";
-import { Plus, Trash2, RefreshCw, Key, Bell, Users, Activity, Download, CheckCircle2, Youtube, Twitter, Instagram, CheckCircle, XCircle, Loader2, Eye, EyeOff } from "lucide-react";
+import { Plus, Trash2, RefreshCw, Key, Bell, Users, Activity, Download, CheckCircle2, Youtube, Twitter, Instagram, CheckCircle, XCircle, Loader2, Eye, EyeOff, Clock, CalendarClock, Zap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -446,6 +446,95 @@ function SyncControlsSection() {
   );
 }
 
+// ─── Auto-Sync Schedule Section ───────────────────────────────────────────
+function AutoSyncSection() {
+  const { data: jobs, isLoading, refetch } = trpc.admin.listAutoSyncJobs.useQuery();
+
+  const createJob = trpc.admin.createAutoSyncJob.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Auto-sync scheduled! Next run: ${data.nextExecutionAt ? new Date(data.nextExecutionAt).toLocaleString() : "midnight UTC"}`);
+      refetch();
+    },
+    onError: (e) => toast.error(`Failed to schedule: ${e.message}`),
+  });
+
+  const deleteJob = trpc.admin.deleteAutoSyncJob.useMutation({
+    onSuccess: () => { toast.success("Auto-sync schedule removed"); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const dailySyncJob = jobs?.find((j) => j.callbackPath === "/api/scheduled/daily-sync");
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="font-semibold flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /> Auto-Sync Schedule</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Schedule a daily midnight UTC cron job to automatically run the full sync pipeline.
+          <strong className="text-amber-400 ml-1">⚠ Requires the site to be deployed (published) before activating.
+          </strong>
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading schedule status...
+        </div>
+      ) : dailySyncJob ? (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-sm font-medium text-emerald-400">Active — Daily at midnight UTC</span>
+              </div>
+              <p className="text-xs text-muted-foreground font-mono">{dailySyncJob.cronExpression}</p>
+            </div>
+            <Button
+              size="sm" variant="outline"
+              className="text-xs gap-1.5 text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/5 shrink-0"
+              disabled={deleteJob.isPending}
+              onClick={() => deleteJob.mutate({ taskUid: dailySyncJob.taskUid })}
+            >
+              {deleteJob.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+              Remove Schedule
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            {dailySyncJob.lastExecutedAt && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Clock className="h-3 w-3" />
+                <span>Last run: {new Date(dailySyncJob.lastExecutedAt).toLocaleString()}</span>
+              </div>
+            )}
+            {dailySyncJob.nextExecutionAt && (
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Zap className="h-3 w-3" />
+                <span>Next run: {new Date(dailySyncJob.nextExecutionAt).toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border/40 bg-muted/10 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span className="w-2 h-2 rounded-full bg-muted-foreground/40" />
+            No auto-sync schedule configured
+          </div>
+          <Button
+            size="sm" className="gap-2"
+            disabled={createJob.isPending}
+            onClick={() => createJob.mutate()}
+          >
+            {createJob.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarClock className="h-4 w-4" />}
+            {createJob.isPending ? "Scheduling..." : "Enable Daily Auto-Sync (midnight UTC)"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Excel Export Section ─────────────────────────────────────────────────────
 function ExcelExportSection() {
   return (
@@ -734,6 +823,11 @@ export default function AdminPanel() {
         </TabsContent>
 
         <TabsContent value="sync" className="mt-6 space-y-6">
+          <Card className="border-border/50 bg-card/80">
+            <CardContent className="p-6">
+              <AutoSyncSection />
+            </CardContent>
+          </Card>
           <Card className="border-border/50 bg-card/80">
             <CardContent className="p-6">
               <SyncControlsSection />

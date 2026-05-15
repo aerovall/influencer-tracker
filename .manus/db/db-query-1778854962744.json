@@ -1,0 +1,9 @@
+{
+  "query": "SELECT video_id, date, COUNT(*) as cnt\nFROM view_counts\nGROUP BY video_id, date\nHAVING cnt > 1\nORDER BY cnt DESC\nLIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute SELECT video_id, date, COUNT(*) as cnt\nFROM view_counts\nGROUP BY video_id, date\nHAVING cnt > 1\nORDER BY cnt DESC\nLIMIT 20;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1930
+}

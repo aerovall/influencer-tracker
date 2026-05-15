@@ -1,0 +1,25 @@
+{
+  "query": "SELECT id, channel_name, subscriber_count FROM youtube_channels ORDER BY subscriber_count DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute SELECT id, channel_name, subscriber_count FROM youtube_channels ORDER BY subscriber_count DESC;",
+  "rows": [
+    {
+      "id": "30001",
+      "channel_name": "Conor Kenny",
+      "subscriber_count": "299000"
+    },
+    {
+      "id": "60001",
+      "channel_name": "Levi",
+      "subscriber_count": "232000"
+    },
+    {
+      "id": "60002",
+      "channel_name": "Tyler Hill Crypto",
+      "subscriber_count": "138000"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tchannel_name\tsubscriber_count\n30001\tConor Kenny\t299000\n60001\tLevi\t232000\n60002\tTyler Hill Crypto\t138000\n",
+  "stderr": "",
+  "execution_time_ms": 1935
+}

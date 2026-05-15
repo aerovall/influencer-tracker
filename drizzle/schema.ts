@@ -7,6 +7,7 @@ import {
   mysqlTable,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
 
@@ -112,7 +113,9 @@ export const viewCounts = mysqlTable("view_counts", {
   manualLikes: bigint("manual_likes", { mode: "number" }),
   manualComments: bigint("manual_comments", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, (t) => ({
+  videoDateUnique: uniqueIndex("view_counts_video_date_unique").on(t.videoId, t.date),
+}));
 
 export type ViewCount = typeof viewCounts.$inferSelect;
 export type InsertViewCount = typeof viewCounts.$inferInsert;

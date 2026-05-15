@@ -347,3 +347,12 @@
 - [x] Summary: add Channel Views visual bar chart section (coloured cell bars per channel, sorted by views)
 - [x] All Videos: fix missing viewCount/likes/comments (from enrichedVideos)
 - [x] Sponsorships: video name + hyperlink instead of raw ID
+
+## v2.23 — High Priority Fixes
+
+- [x] Fix subscriber count storage: parseSubscriberCount multiplies correctly (299K → 299000), existing DB records corrected
+- [x] Add unique constraint on view_counts (videoId, date) in schema.ts, migration generated and applied
+- [x] Snapshot insert uses INSERT ... ON DUPLICATE KEY UPDATE (insertViewCountPreserveScrape) — graceful with unique constraint
+- [x] Implement scheduled auto-sync: daily heartbeat at midnight UTC via Admin Panel > Sync > Auto-Sync Schedule
+- [x] Show last auto-sync time and next run time in Admin Panel > Sync tab
+- [x] Add vitest tests for all 3 fixes (autosync.test.ts — 9 tests passing)

@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE youtube_channels\nSET subscriber_count = subscriber_count * 1000\nWHERE subscriber_count > 0 AND subscriber_count < 10000;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute UPDATE youtube_channels\nSET subscriber_count = subscriber_count * 1000\nWHERE subscriber_count > 0 AND subscriber_count < 10000;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1788
+}

@@ -82,6 +82,8 @@ import {
   toDbVideoId,
 } from "./channelEngine";
 import { ENV } from "./_core/env";
+import { createHeartbeatJob, deleteHeartbeatJob, listHeartbeatJobs } from "./_core/heartbeat";
+import { parse as parseCookie } from "cookie";
 import { updateVideoMeta, upsertCommentSnapshot, getLatestCommentSnapshot, getLatestCommentSnapshotsBulk } from "./db";
 import { scrapeVideoComments, scrapeVideoBatch } from "./commentEngine";
 
@@ -915,6 +917,39 @@ const adminRouter = router({
   }),
 
   recentSyncLogs: protectedProcedure.query(() => getRecentSyncLogs(20)),
+
+  // ─── Auto-sync Heartbeat Job Management ─────────────────────────────────────
+  // Lists all heartbeat cron jobs for this project owner.
+  listAutoSyncJobs: protectedProcedure.query(async ({ ctx }) => {
+    const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+    try {
+      const result = await listHeartbeatJobs(sessionToken);
+      return result.jobs;
+    } catch {
+      return [];
+    }
+  }),
+
+  // Creates the midnight UTC daily auto-sync heartbeat job.
+  createAutoSyncJob: protectedProcedure.mutation(async ({ ctx }) => {
+    const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+    const job = await createHeartbeatJob({
+      name: "influencer-tracker-daily-sync",
+      cron: "0 0 0 * * *",  // midnight UTC every day
+      path: "/api/scheduled/daily-sync",
+      description: "Daily auto-sync: Full Sync + View Count Snapshot + Daily Report",
+    }, sessionToken);
+    return { taskUid: job.taskUid, nextExecutionAt: job.nextExecutionAt };
+  }),
+
+  // Deletes a heartbeat job by taskUid.
+  deleteAutoSyncJob: protectedProcedure
+    .input(z.object({ taskUid: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const sessionToken = parseCookie(ctx.req.headers.cookie ?? "")[COOKIE_NAME] ?? "";
+      await deleteHeartbeatJob(input.taskUid, sessionToken);
+      return { success: true };
+    }),
 });
 
 // ─── Reports Router ───────────────────────────────────────────────────────────

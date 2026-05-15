@@ -1,0 +1,1 @@
+ALTER TABLE `view_counts` ADD CONSTRAINT `view_counts_video_date_unique` UNIQUE(`video_id`,`date`);
