@@ -330,13 +330,13 @@
 - [x] All Videos: replace video ID/title with actual video name + hyperlink to video URL
 
 ## v2.22 — Excel Final Fix
-- [ ] Fix: View Counts sheet still shows raw yt_xxx IDs — exportStats must join viewCounts with videos to populate title
-- [ ] Fix: Top Videos sheet has empty Views/Likes/Comments — exportStats videos must include latest viewCount/likes/comments from view_counts table
-- [ ] Fix: All Videos sheet has empty Views/Likes/Comments — same join needed
-- [ ] Fix: Top Videos sheet — remove Medal row/column (just show rank number)
-- [ ] Remove: Daily Reports sheet from Excel export
-- [ ] Remove: Weekly Reports sheet from Excel export (if present)
-- [ ] Add: Channel Views bar chart to Summary sheet (horizontal bars per channel, views comparison)
+- [x] Fix: View Counts sheet still shows raw yt_xxx IDs — exportStats must join viewCounts with videos to populate title
+- [x] Fix: Top Videos sheet has empty Views/Likes/Comments — exportStats videos must include latest viewCount/likes/comments from view_counts table
+- [x] Fix: All Videos sheet has empty Views/Likes/Comments — same join needed
+- [x] Fix: Top Videos sheet — remove Medal row/column (just show rank number)
+- [x] Remove: Daily Reports sheet from Excel export
+- [x] Remove: Weekly Reports sheet from Excel export (if present)
+- [x] Add: Channel Views bar chart to Summary sheet (horizontal bars per channel, views comparison)
 
 ## v2.22 — Excel Final Fix
 - [x] Top Videos: remove Medal column (keep rank number only)

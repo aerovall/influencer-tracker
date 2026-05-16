@@ -825,18 +825,18 @@ function buildTopVideosSheet(videos: any[]): XLSX.WorkSheet {
       // cols: 0=Rank, 1=Title, 2=Channel, 3=Platform, 4=Views, 5=Likes, 6=Comments, 7=Published
       const align = [0, 4, 5, 6].includes(c) ? "right" : "left";
 
-      const rankHeat = c === 0 ? rankColour(i + 1) : null;
+      // No medal/rank colour — plain alternating rows for rank column
       const viewHeat = c === 4 ? heatColour(Number(rows[i][4]) || 0, viewPerc.p33, viewPerc.p66) : null;
       const likeHeat = c === 5 ? heatColour(Number(rows[i][5]) || 0, likePerc.p33, likePerc.p66) : null;
       const commentHeat = c === 6 ? heatColour(Number(rows[i][6]) || 0, commentPerc.p33, commentPerc.p66) : null;
 
-      ws[addr].s = dataStyle(i, align, rankHeat?.bg ?? viewHeat?.bg ?? likeHeat?.bg ?? commentHeat?.bg, rankHeat?.text ?? viewHeat?.text ?? likeHeat?.text ?? commentHeat?.text);
+      ws[addr].s = dataStyle(i, align, viewHeat?.bg ?? likeHeat?.bg ?? commentHeat?.bg, viewHeat?.text ?? likeHeat?.text ?? commentHeat?.text);
       if ([0, 4, 5, 6].includes(c) && typeof ws[addr].v === "number") ws[addr].z = "#,##0";
 
       // Hyperlink on Title column (c === 1)
       if (c === 1 && top20[i]?.videoUrl) {
         ws[addr].l = { Target: top20[i].videoUrl, Tooltip: top20[i].title ?? "" };
-        if (!rankHeat && !viewHeat) {
+        if (!viewHeat) {
           ws[addr].s = { ...ws[addr].s, font: { ...ws[addr].s.font, underline: true, color: { rgb: "1A3A8F" } } };
         }
       }
