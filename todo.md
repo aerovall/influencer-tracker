@@ -356,3 +356,10 @@
 - [x] Implement scheduled auto-sync: daily heartbeat at midnight UTC via Admin Panel > Sync > Auto-Sync Schedule
 - [x] Show last auto-sync time and next run time in Admin Panel > Sync tab
 - [x] Add vitest tests for all 3 fixes (autosync.test.ts — 9 tests passing)
+
+## v2.24 — Sync & Scraper Fixes
+
+- [x] Fix sync error: "Service Unavailable is not valid JSON" — added proper non-JSON response handling in channelEngine with session reset + friendly error message
+- [x] Fix scraper: do not always overwrite 30 videos — smart early-stop after 3 consecutive known videos; new videos always inserted
+- [x] Preserve existing video stats (views/likes/comments) — all 3 scraper insertViewCount calls replaced with insertViewCountPreserveScrape
+- [x] Scraper updates metadata (title, thumbnail) on existing videos but leaves view_counts untouched via PreserveScrape

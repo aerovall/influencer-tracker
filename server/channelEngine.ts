@@ -55,12 +55,23 @@ export interface VideoStats {
 // ─── Innertube singleton ──────────────────────────────────────────────────────
 
 let _yt: Innertube | null = null;
+let _ytCreatedAt = 0;
+const YT_SESSION_TTL_MS = 30 * 60 * 1000; // reset session every 30 min to avoid stale tokens
 
 async function getYT(): Promise<Innertube> {
-  if (!_yt) {
+  const now = Date.now();
+  if (!_yt || now - _ytCreatedAt > YT_SESSION_TTL_MS) {
+    _yt = null;
     _yt = await Innertube.create({ cache: undefined, generate_session_locally: true });
+    _ytCreatedAt = now;
   }
   return _yt;
+}
+
+/** Reset the Innertube singleton — call after a Service Unavailable / parse error. */
+export function resetYTSession(): void {
+  _yt = null;
+  _ytCreatedAt = 0;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -329,8 +340,26 @@ export async function resolveChannel(input: string): Promise<ChannelInfo> {
  * Stats are sourced directly from the Videos tab — no per-video API calls needed.
  */
 export async function fetchChannelUploads(channelId: string, limit = 10): Promise<DiscoveredVideo[]> {
-  const yt = await getYT();
-  const channel = await yt.getChannel(channelId);
+  let yt: Innertube;
+  try {
+    yt = await getYT();
+  } catch (initErr) {
+    resetYTSession();
+    throw new Error(`YouTube session initialisation failed. Please try again in a moment. (${initErr instanceof Error ? initErr.message : String(initErr)})`);
+  }
+
+  let channel: any;
+  try {
+    channel = await yt.getChannel(channelId);
+  } catch (fetchErr) {
+    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    // YouTube returned a non-JSON response (e.g. 503 Service Unavailable) — reset session
+    if (msg.includes("not valid JSON") || msg.includes("Service Unavailable") || msg.includes("503") || msg.includes("SyntaxError")) {
+      resetYTSession();
+      throw new Error(`YouTube is temporarily unavailable (rate limited or service error). Please wait 1–2 minutes and try again.`);
+    }
+    throw new Error(`Failed to fetch channel data: ${msg}`);
+  }
 
   // Get the Videos tab
   let videosTab: any;

@@ -383,19 +383,20 @@ const videosRouter = router({
               scrapeError: result.error ?? null,
               scrapedAt: result.scrapedAt,
             });
-            // Auto-fill scraped likes/comments into view_counts for today
+            // Auto-fill scraped likes/comments into view_counts for today.
+            // Use PreserveScrape so we never zero-out viewCount already written by sync.
             if (!result.error && (result.likeCount != null || result.commentCountNum != null)) {
               const countId = `vc_${dbVideoId}_${today}`;
-              const existing = await getLatestViewCountByVideoId(dbVideoId);
-              await insertViewCount({
+              const existingVc = await getLatestViewCountByVideoId(dbVideoId);
+              await insertViewCountPreserveScrape({
                 countId,
                 videoId: dbVideoId,
                 date: today,
-                viewCount: existing?.viewCount ?? 0,
-                likes: result.likeCount ?? existing?.likes ?? 0,
-                comments: result.commentCountNum ?? existing?.comments ?? 0,
-                shares: existing?.shares ?? 0,
-                engagementRate: existing?.engagementRate ?? "0",
+                viewCount: existingVc?.viewCount ?? 0,
+                likes: result.likeCount ?? existingVc?.likes ?? 0,
+                comments: result.commentCountNum ?? existingVc?.comments ?? 0,
+                shares: existingVc?.shares ?? 0,
+                engagementRate: existingVc?.engagementRate ?? "0",
               });
             }
             if (result.error) {
@@ -467,19 +468,20 @@ const videosRouter = router({
         scrapeError: result.error,
         scrapedAt: result.scrapedAt,
       });
-      // Auto-fill scraped likes/comments into view_counts for today
+      // Auto-fill scraped likes/comments into view_counts for today.
+      // Use PreserveScrape so we never zero-out viewCount already written by sync.
       if (!result.error && (result.likeCount != null || result.commentCountNum != null)) {
         const countId = `vc_${input.videoId}_${today}`;
-        const existing = await getLatestViewCountByVideoId(input.videoId);
-        await insertViewCount({
+        const existingVc = await getLatestViewCountByVideoId(input.videoId);
+        await insertViewCountPreserveScrape({
           countId,
           videoId: input.videoId,
           date: today,
-          viewCount: existing?.viewCount ?? 0,
-          likes: result.likeCount ?? existing?.likes ?? 0,
-          comments: result.commentCountNum ?? existing?.comments ?? 0,
-          shares: existing?.shares ?? 0,
-          engagementRate: existing?.engagementRate ?? "0",
+          viewCount: existingVc?.viewCount ?? 0,
+          likes: result.likeCount ?? existingVc?.likes ?? 0,
+          comments: result.commentCountNum ?? existingVc?.comments ?? 0,
+          shares: existingVc?.shares ?? 0,
+          engagementRate: existingVc?.engagementRate ?? "0",
         });
       }
       return { success: true, result };
@@ -538,19 +540,20 @@ const videosRouter = router({
               scrapeError: result.error ?? null,
               scrapedAt: result.scrapedAt,
             });
-            // Auto-fill scraped likes/comments into view_counts for today
+            // Auto-fill scraped likes/comments into view_counts for today.
+            // Use PreserveScrape so we never zero-out viewCount already written by sync.
             if (!result.error && (result.likeCount != null || result.commentCountNum != null)) {
               const countId = `vc_${dbVideoId}_${today}`;
-              const existing = await getLatestViewCountByVideoId(dbVideoId);
-              await insertViewCount({
+              const existingVc = await getLatestViewCountByVideoId(dbVideoId);
+              await insertViewCountPreserveScrape({
                 countId,
                 videoId: dbVideoId,
                 date: today,
-                viewCount: existing?.viewCount ?? 0,
-                likes: result.likeCount ?? existing?.likes ?? 0,
-                comments: result.commentCountNum ?? existing?.comments ?? 0,
-                shares: existing?.shares ?? 0,
-                engagementRate: existing?.engagementRate ?? "0",
+                viewCount: existingVc?.viewCount ?? 0,
+                likes: result.likeCount ?? existingVc?.likes ?? 0,
+                comments: result.commentCountNum ?? existingVc?.comments ?? 0,
+                shares: existingVc?.shares ?? 0,
+                engagementRate: existingVc?.engagementRate ?? "0",
               });
             }
             if (result.error) {
@@ -1146,6 +1149,9 @@ const channelsRouter = router({
 
       // Fetch latest uploads — stats (views, duration, title) come directly from
       // the channel listing. No per-video API calls needed (avoids bot-detection).
+      // Fetch up to 30 but we use smart early-stop: once we see 3 consecutive
+      // already-known videos we stop snapshotting stats (new videos are always
+      // inserted regardless of position).
       const uploads = await fetchChannelUploads(input.channelId, 30);
 
       // Optionally enrich with YouTube Data API v3 (likes, comments, exact view count)
@@ -1175,13 +1181,19 @@ const channelsRouter = router({
 
       let newVideos = 0;
       let updatedStats = 0;
+      // Smart early-stop: after 3 consecutive already-known videos we stop snapshotting
+      // stats for the rest (avoids writing 30 rows when only 1-2 are new).
+      // New videos are ALWAYS inserted even if found after the stop threshold.
+      let consecutiveKnown = 0;
+      const KNOWN_STOP_THRESHOLD = 3;
 
       for (const upload of uploads) {
         const v3 = v3StatsMap.get(upload.videoId);
         const existing = await getVideoByVideoId(upload.ytVideoId);
 
         if (!existing) {
-          // New video discovered
+          // New video discovered — always insert regardless of early-stop state
+          consecutiveKnown = 0; // reset counter when a new video is found
           await insertVideo({
             videoId: upload.ytVideoId,
             influencerName: channel.channelName,
@@ -1197,29 +1209,35 @@ const channelsRouter = router({
             isSeen: false,  // triggers the Channels nav badge
           });
           newVideos++;
-        } else if (upload.title && upload.title !== "Untitled" && existing.title === "Untitled") {
-          // Back-fill title/duration for videos inserted without stats
-          await updateVideoMeta(upload.ytVideoId, {
-            title: v3?.title ?? upload.title,
-            durationSeconds: v3?.durationSeconds ?? upload.durationSeconds,
-            thumbnailUrl: v3?.thumbnailUrl ?? upload.thumbnailUrl,
-          });
+        } else {
+          consecutiveKnown++;
+          if (upload.title && upload.title !== "Untitled" && existing.title === "Untitled") {
+            // Back-fill title/duration for videos inserted without stats
+            await updateVideoMeta(upload.ytVideoId, {
+              title: v3?.title ?? upload.title,
+              durationSeconds: v3?.durationSeconds ?? upload.durationSeconds,
+              thumbnailUrl: v3?.thumbnailUrl ?? upload.thumbnailUrl,
+            });
+          }
         }
 
         // Snapshot today's stats — use PreserveScrape variant so scraped likes/comments
         // are NEVER overwritten by the 0-values returned by the channel listing.
-        const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
-        await insertViewCountPreserveScrape({
-          countId,
-          videoId: upload.ytVideoId,
-          date: todayStr(),
-          viewCount: v3?.viewCount ?? upload.viewCount,
-          likes: v3?.likeCount ?? upload.likeCount ?? 0,
-          comments: v3?.commentCount ?? 0,
-          shares: 0,
-          engagementRate: "0",
-        });
-        updatedStats++;
+        // Skip stat snapshots once we've hit the early-stop threshold (all known videos).
+        if (consecutiveKnown <= KNOWN_STOP_THRESHOLD) {
+          const countId = `vc_${upload.ytVideoId}_${todayStr()}`;
+          await insertViewCountPreserveScrape({
+            countId,
+            videoId: upload.ytVideoId,
+            date: todayStr(),
+            viewCount: v3?.viewCount ?? upload.viewCount,
+            likes: v3?.likeCount ?? upload.likeCount ?? 0,
+            comments: v3?.commentCount ?? 0,
+            shares: 0,
+            engagementRate: "0",
+          });
+          updatedStats++;
+        }
       }
 
       await updateChannelLastChecked(input.channelId);
