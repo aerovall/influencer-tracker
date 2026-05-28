@@ -543,7 +543,10 @@ function ChannelCard({ channel }: { channel: any }) {
       }
       utils.videos.getCommentData.invalidate();
       utils.videos.getCommentDataBulk.invalidate();
+      utils.videos.list.invalidate();
+      utils.videos.getViewCounts.invalidate();
       utils.channels.listByChannel.invalidate({ channelId: channel.channelId });
+      utils.channels.list.invalidate();
     }
     prevScrapeStatusRef.current = channelScrapeStatus.status;
   }, [channelScrapeStatus?.status, channelScrapeStatus?.done]);
@@ -560,6 +563,7 @@ function ChannelCard({ channel }: { channel: any }) {
       }
       utils.channels.list.invalidate();
       utils.channels.listByChannel.invalidate();
+      utils.videos.list.invalidate();
       utils.videos.getViewCounts.invalidate();
     },
     onError: (e) => toast.error(`Sync failed: ${e.message}`),
@@ -727,9 +731,13 @@ function BulkScrapeBar() {
       } else {
         toast.success(`Bulk scrape complete — ${jobStatus.done} videos updated!`);
       }
-      // Refresh all comment data
+      // Refresh all comment data and the videos list
       utils.videos.getCommentData.invalidate();
       utils.videos.getCommentDataBulk.invalidate();
+      utils.videos.list.invalidate();
+      utils.videos.getViewCounts.invalidate();
+      utils.channels.list.invalidate();
+      utils.channels.listByChannel.invalidate();
     }
     if (jobStatus.status === "running") setPolling(true);
     prevStatusRef.current = jobStatus.status;

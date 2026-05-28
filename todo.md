@@ -363,3 +363,8 @@
 - [x] Fix scraper: do not always overwrite 30 videos — smart early-stop after 3 consecutive known videos; new videos always inserted
 - [x] Preserve existing video stats (views/likes/comments) — all 3 scraper insertViewCount calls replaced with insertViewCountPreserveScrape
 - [x] Scraper updates metadata (title, thumbnail) on existing videos but leaves view_counts untouched via PreserveScrape
+
+## v2.25 — Sync & Scrape UI Bugs
+
+- [x] Fix sync "already up to date - sync skipped" — removed overly-aggressive early-stop threshold; sync now always snapshots stats for all fetched videos
+- [x] Fix video list not updating after scrape completes — added videos.list + getViewCounts invalidation to all 3 scrape completion handlers (channel scrape, bulk scrape, sync)
