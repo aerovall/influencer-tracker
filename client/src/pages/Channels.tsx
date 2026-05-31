@@ -497,7 +497,7 @@ function ChannelCard({ channel }: { channel: any }) {
   // Track whether we've already shown the completion toast to avoid duplicates
   const prevScrapeStatusRef = useRef<string>("idle");
 
-  const { data: videoPage, isLoading: videosLoading } = trpc.channels.listByChannel.useQuery(
+  const { data: videoPage, isLoading: videosLoading, refetch: refetchVideos } = trpc.channels.listByChannel.useQuery(
     { channelId: channel.channelId, page, limit: PAGE_SIZE },
     { enabled: expanded }
   );
@@ -550,8 +550,11 @@ function ChannelCard({ channel }: { channel: any }) {
       utils.videos.getCommentDataBulk.invalidate();
       utils.videos.list.invalidate();
       utils.videos.getViewCounts.invalidate();
-      utils.channels.listByChannel.invalidate({ channelId: channel.channelId });
+      // Invalidate ALL listByChannel queries (no partial key — partial keys don't match paginated cache)
+      utils.channels.listByChannel.invalidate();
       utils.channels.list.invalidate();
+      // Force immediate refetch of the currently visible page
+      if (expanded) refetchVideos();
     }
     prevScrapeStatusRef.current = channelScrapeStatus.status;
   }, [channelScrapeStatus?.status, channelScrapeStatus?.done]);
@@ -570,6 +573,8 @@ function ChannelCard({ channel }: { channel: any }) {
       utils.channels.listByChannel.invalidate();
       utils.videos.list.invalidate();
       utils.videos.getViewCounts.invalidate();
+      // Force immediate refetch of the currently visible page
+      if (expanded) refetchVideos();
     },
     onError: (e) => toast.error(`Sync failed: ${e.message}`),
   });
