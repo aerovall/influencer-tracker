@@ -368,3 +368,10 @@
 
 - [x] Fix sync "already up to date - sync skipped" — removed overly-aggressive early-stop threshold; sync now always snapshots stats for all fetched videos
 - [x] Fix video list not updating after scrape completes — added videos.list + getViewCounts invalidation to all 3 scrape completion handlers (channel scrape, bulk scrape, sync)
+
+## v2.26 — Video List Pagination & Cap Removal
+
+- [x] Remove 30-video hard cap from listByChannel DB query
+- [x] Add server-side pagination to listByChannel (page, limit, total count)
+- [x] Update Channels.tsx video list to show paginated results with prev/next controls
+- [x] Sync now fetches up to 100 videos (was 30) to capture April 2026+ history

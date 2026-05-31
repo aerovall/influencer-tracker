@@ -33,6 +33,7 @@ vi.mock("./db", () => ({
   ]),
   getVideoByVideoId: vi.fn().mockResolvedValue({ videoId: "yt_abc12345678", title: "Test Video" }),
   getVideosByChannelId: vi.fn().mockResolvedValue([]),
+  getVideosByChannelIdPaginated: vi.fn().mockResolvedValue({ videos: [], total: 0 }),
   insertVideo: vi.fn().mockResolvedValue(undefined),
   updateVideo: vi.fn().mockResolvedValue(undefined),
   deleteVideo: vi.fn().mockResolvedValue(undefined),
@@ -510,8 +511,9 @@ describe("channels.listByChannel", () => {
   it("returns videos for a given channelId", async () => {
     const ctx = createAuthContext();
     const caller = appRouter.createCaller(ctx);
-    const videos = await caller.channels.listByChannel({ channelId: "UCtest123456789" });
-    expect(Array.isArray(videos)).toBe(true);
+    const result = await caller.channels.listByChannel({ channelId: "UCtest123456789", page: 1, limit: 20 });
+    expect(Array.isArray(result.videos)).toBe(true);
+    expect(typeof result.total).toBe("number");
   });
 });
 

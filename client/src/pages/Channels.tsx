@@ -492,13 +492,18 @@ function CommentPanel({ videoId }: { videoId: string }) {
 function ChannelCard({ channel }: { channel: any }) {
   const utils = trpc.useUtils();
   const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
   // Track whether we've already shown the completion toast to avoid duplicates
   const prevScrapeStatusRef = useRef<string>("idle");
 
-  const { data: videos, isLoading: videosLoading } = trpc.channels.listByChannel.useQuery(
-    { channelId: channel.channelId },
+  const { data: videoPage, isLoading: videosLoading } = trpc.channels.listByChannel.useQuery(
+    { channelId: channel.channelId, page, limit: PAGE_SIZE },
     { enabled: expanded }
   );
+  const videos = videoPage?.videos ?? [];
+  const totalVideos = videoPage?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalVideos / PAGE_SIZE));
 
   // Per-channel scrape job polling.
   // IMPORTANT: polling is driven entirely by the *data* status (not a separate boolean state)
@@ -628,7 +633,7 @@ function ChannelCard({ channel }: { channel: any }) {
               size="sm"
               variant="outline"
               className="gap-1.5 text-xs h-7"
-              onClick={() => setExpanded((e) => !e)}
+              onClick={() => { setExpanded((e) => !e); setPage(1); }}
             >
               {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
               {expanded ? "Hide" : "Videos"}
@@ -666,7 +671,7 @@ function ChannelCard({ channel }: { channel: any }) {
               <div className="p-4 space-y-2">
                 {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
               </div>
-            ) : (videos?.length ?? 0) === 0 ? (
+            ) : videos.length === 0 ? (
               <div className="p-6 text-center text-sm text-muted-foreground">
                 No videos found for this channel. Try syncing.
               </div>
@@ -685,11 +690,39 @@ function ChannelCard({ channel }: { channel: any }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {videos!.map((v: any) => <VideoRow key={v.videoId} video={v} />)}
+                  {videos.map((v: any) => <VideoRow key={v.videoId} video={v} />)}
                 </tbody>
               </table>
             )}
           </div>
+          {/* Pagination controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-2 pt-3">
+              <span className="text-xs text-muted-foreground">
+                {totalVideos} videos &middot; page {page} of {totalPages}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  &lsaquo; Prev
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next &rsaquo;
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       )}
     </Card>

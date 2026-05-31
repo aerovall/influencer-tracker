@@ -655,6 +655,30 @@ export async function getVideosByChannelId(channelId: string) {
     .orderBy(desc(videos.publishedDate));
 }
 
+export async function getVideosByChannelIdPaginated(
+  channelId: string,
+  page: number = 1,
+  limit: number = 20,
+) {
+  const db = await getDb();
+  if (!db) return { videos: [], total: 0 };
+  const offset = (page - 1) * limit;
+  const [rows, countRows] = await Promise.all([
+    db
+      .select()
+      .from(videos)
+      .where(eq(videos.channelId, channelId))
+      .orderBy(desc(videos.publishedDate))
+      .limit(limit)
+      .offset(offset),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(videos)
+      .where(eq(videos.channelId, channelId)),
+  ]);
+  return { videos: rows, total: Number(countRows[0]?.count ?? 0) };
+}
+
 export async function getActiveChannels() {
   const db = await getDb();
   if (!db) return [];

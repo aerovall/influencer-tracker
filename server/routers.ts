@@ -38,6 +38,7 @@ import {
   getVideoByVideoId,
   getVideoStats,
   getVideosByChannelId,
+  getVideosByChannelIdPaginated,
   getViewCountTrends,
   getViewCountsByVideoId,
   getLatestViewCountByVideoId,
@@ -1149,10 +1150,8 @@ const channelsRouter = router({
 
       // Fetch latest uploads — stats (views, duration, title) come directly from
       // the channel listing. No per-video API calls needed (avoids bot-detection).
-      // Fetch up to 30 but we use smart early-stop: once we see 3 consecutive
-      // already-known videos we stop snapshotting stats (new videos are always
-      // inserted regardless of position).
-      const uploads = await fetchChannelUploads(input.channelId, 30);
+      // Fetch up to 100 to capture videos from April 2026 onwards.
+      const uploads = await fetchChannelUploads(input.channelId, 100);
 
       // Optionally enrich with YouTube Data API v3 (likes, comments, exact view count)
       const apiKey = ENV.youtubeApiKey;
@@ -1233,11 +1232,15 @@ const channelsRouter = router({
       return { success: true, newVideos, updatedStats, channelName: channel.channelName };
     }),
 
-  /** List all videos belonging to a specific channel. */
+  /** List all videos belonging to a specific channel, paginated. */
   listByChannel: protectedProcedure
-    .input(z.object({ channelId: z.string() }))
+    .input(z.object({
+      channelId: z.string(),
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(20),
+    }))
     .query(async ({ input }) => {
-      return getVideosByChannelId(input.channelId);
+      return getVideosByChannelIdPaginated(input.channelId, input.page, input.limit);
     }),
 
   /** Unlink (soft-delete) a channel. */
