@@ -361,7 +361,8 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
     throw new Error(`Failed to fetch channel data: ${msg}`);
   }
 
-  // Get the Videos tab
+  // Get the Videos tab — paginate through continuations to collect up to `limit` videos.
+  // youtubei.js returns ~30 items per page; we must call getContinuation() for more.
   let videosTab: any;
   try {
     videosTab = await (channel as any).getVideos();
@@ -369,10 +370,26 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
     videosTab = null;
   }
 
-  const items: any[] = videosTab?.videos ?? videosTab?.items ?? [];
+  const allItems: any[] = [];
+  let currentPage: any = videosTab;
+
+  while (currentPage && allItems.length < limit) {
+    const pageItems: any[] = currentPage?.videos ?? currentPage?.items ?? [];
+    allItems.push(...pageItems);
+
+    // Stop if we have enough or no more pages
+    if (allItems.length >= limit || !currentPage.has_continuation) break;
+
+    try {
+      currentPage = await currentPage.getContinuation();
+    } catch {
+      break; // no more pages or continuation failed
+    }
+  }
+
   const results: DiscoveredVideo[] = [];
 
-  for (const item of items.slice(0, limit)) {
+  for (const item of allItems.slice(0, limit)) {
     try {
       const { rawId, title, viewCount, durationSeconds, publishedDate, thumbnailUrl } = extractItemStats(item);
       if (!rawId || rawId.length !== 11) continue;

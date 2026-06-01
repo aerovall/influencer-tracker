@@ -1,0 +1,22 @@
+{
+  "query": "\nSELECT c.channel_name, \n       COUNT(v.id) as total_videos,\n       MAX(v.published_date) as newest_video,\n       MIN(v.published_date) as oldest_video\nFROM youtube_channels c\nLEFT JOIN videos v ON v.channel_id = c.id\nGROUP BY c.id, c.channel_name\nORDER BY c.channel_name;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute \nSELECT c.channel_name, \n       COUNT(v.id) as total_videos,\n       MAX(v.published_date) as newest_video,\n       MIN(v.published_date) as oldest_video\nFROM youtube_channels c\nLEFT JOIN videos v ON v.channel_id = c.id\nGROUP BY c.id, c.channel_name\nORDER BY c.channel_name;\n",
+  "rows": [
+    {
+      "channel_name": "Conor Kenny",
+      "total_videos": "0",
+      "newest_video": "NULL",
+      "oldest_video": "NULL"
+    },
+    {
+      "channel_name": "Tyler Hill Crypto",
+      "total_videos": "0",
+      "newest_video": "NULL",
+      "oldest_video": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "channel_name\ttotal_videos\tnewest_video\toldest_video\nConor Kenny\t0\tNULL\tNULL\nTyler Hill Crypto\t0\tNULL\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 1577
+}

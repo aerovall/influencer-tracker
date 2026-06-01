@@ -1,0 +1,38 @@
+{
+  "query": "\nSELECT channel_id, channel_name FROM youtube_channels;\nSELECT DISTINCT channel_id, COUNT(*) as cnt FROM videos GROUP BY channel_id ORDER BY cnt DESC;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute \nSELECT channel_id, channel_name FROM youtube_channels;\nSELECT DISTINCT channel_id, COUNT(*) as cnt FROM videos GROUP BY channel_id ORDER BY cnt DESC;\n",
+  "rows": [
+    {
+      "channel_id": "UCVEWFrDlFd3qFXCEz8-98Vw",
+      "channel_name": "Tyler Hill Crypto"
+    },
+    {
+      "channel_id": "UCJQY1CkwtFNfJfIzROc8KiA",
+      "channel_name": "Conor Kenny"
+    },
+    {
+      "channel_id": "channel_id",
+      "channel_name": "cnt"
+    },
+    {
+      "channel_id": "UCVEWFrDlFd3qFXCEz8-98Vw",
+      "channel_name": "30"
+    },
+    {
+      "channel_id": "UC0SesdSOSgLERIZSj_FC8wQ",
+      "channel_name": "30"
+    },
+    {
+      "channel_id": "UCJQY1CkwtFNfJfIzROc8KiA",
+      "channel_name": "30"
+    },
+    {
+      "channel_id": "NULL",
+      "channel_name": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "channel_id\tchannel_name\nUCVEWFrDlFd3qFXCEz8-98Vw\tTyler Hill Crypto\nUCJQY1CkwtFNfJfIzROc8KiA\tConor Kenny\nchannel_id\tcnt\nUCVEWFrDlFd3qFXCEz8-98Vw\t30\nUC0SesdSOSgLERIZSj_FC8wQ\t30\nUCJQY1CkwtFNfJfIzROc8KiA\t30\nNULL\t1\n",
+  "stderr": "",
+  "execution_time_ms": 1824
+}

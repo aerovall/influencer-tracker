@@ -1,0 +1,36 @@
+{
+  "query": "\nSELECT id, channel_id, channel_name FROM youtube_channels;\nSELECT COUNT(*) as total_videos, MIN(published_date) as oldest, MAX(published_date) as newest FROM videos;\nSELECT DISTINCT channel_id FROM videos LIMIT 5;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute \nSELECT id, channel_id, channel_name FROM youtube_channels;\nSELECT COUNT(*) as total_videos, MIN(published_date) as oldest, MAX(published_date) as newest FROM videos;\nSELECT DISTINCT channel_id FROM videos LIMIT 5;\n",
+  "rows": [
+    {
+      "id": "90001",
+      "channel_id": "UCVEWFrDlFd3qFXCEz8-98Vw",
+      "channel_name": "Tyler Hill Crypto"
+    },
+    {
+      "id": "90002",
+      "channel_id": "UCJQY1CkwtFNfJfIzROc8KiA",
+      "channel_name": "Conor Kenny"
+    },
+    {
+      "id": "total_videos",
+      "channel_id": "oldest",
+      "channel_name": "newest"
+    },
+    {
+      "id": "91",
+      "channel_id": "2025-06-01",
+      "channel_name": "2026-05-14"
+    }
+  ],
+  "messages": [
+    "channel_id",
+    "NULL",
+    "UCJQY1CkwtFNfJfIzROc8KiA",
+    "UCVEWFrDlFd3qFXCEz8-98Vw",
+    "UC0SesdSOSgLERIZSj_FC8wQ"
+  ],
+  "stdout": "id\tchannel_id\tchannel_name\n90001\tUCVEWFrDlFd3qFXCEz8-98Vw\tTyler Hill Crypto\n90002\tUCJQY1CkwtFNfJfIzROc8KiA\tConor Kenny\ntotal_videos\toldest\tnewest\n91\t2025-06-01\t2026-05-14\nchannel_id\nNULL\nUCJQY1CkwtFNfJfIzROc8KiA\nUCVEWFrDlFd3qFXCEz8-98Vw\nUC0SesdSOSgLERIZSj_FC8wQ\n",
+  "stderr": "",
+  "execution_time_ms": 1955
+}
