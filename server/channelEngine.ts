@@ -361,8 +361,9 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
     throw new Error(`Failed to fetch channel data: ${msg}`);
   }
 
-  // Get the Videos tab — paginate through continuations to collect up to `limit` videos.
-  // youtubei.js returns ~30 items per page; we must call getContinuation() for more.
+  // Get the Videos tab — paginate through ChannelListContinuation pages to collect up to `limit` videos.
+  // channel.getVideos() returns the first page (~30 items).
+  // channel.getContinuation() / continuation.getContinuation() fetches subsequent pages.
   let videosTab: any;
   try {
     videosTab = await (channel as any).getVideos();
@@ -371,19 +372,35 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
   }
 
   const allItems: any[] = [];
-  let currentPage: any = videosTab;
 
-  while (currentPage && allItems.length < limit) {
-    const pageItems: any[] = currentPage?.videos ?? currentPage?.items ?? [];
-    allItems.push(...pageItems);
+  // Collect first page
+  if (videosTab) {
+    const firstPageItems: any[] = videosTab?.videos ?? videosTab?.items ?? [];
+    allItems.push(...firstPageItems);
+  }
 
-    // Stop if we have enough or no more pages
-    if (allItems.length >= limit || !currentPage.has_continuation) break;
-
+  // Paginate: getContinuation() on the Channel gives a ChannelListContinuation,
+  // then keep calling getContinuation() on that until we have enough or no more pages.
+  if (videosTab && allItems.length < limit) {
+    let continuation: any = null;
     try {
-      currentPage = await currentPage.getContinuation();
+      continuation = await (videosTab as any).getContinuation();
     } catch {
-      break; // no more pages or continuation failed
+      continuation = null;
+    }
+
+    while (continuation && allItems.length < limit) {
+      const pageItems: any[] = continuation?.videos ?? continuation?.items ?? [];
+      if (pageItems.length === 0) break;
+      allItems.push(...pageItems);
+
+      if (!continuation.has_continuation) break;
+
+      try {
+        continuation = await continuation.getContinuation();
+      } catch {
+        break;
+      }
     }
   }
 
