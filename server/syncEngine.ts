@@ -480,7 +480,7 @@ export async function runChannelSync(): Promise<{ newVideos: number; updatedStat
       // Fetch uploads AND stats in a single channel listing call.
       // fetchChannelVideoStats returns a map rawId → stats from the Videos tab.
       // fetchChannelUploads uses the same listing so we combine both in one pass.
-      const uploads = await fetchChannelUploads(channel.channelId, 30);
+      const uploads = await fetchChannelUploads(channel.channelId, 100);
       // Build a stats map directly from the upload objects (they already carry stats)
       const statsMap = new Map(uploads.map((u) => [u.videoId, u]));
 
@@ -610,18 +610,20 @@ export async function runSocialAccountSync(): Promise<{ newPosts: number; snapsh
 }
 
 export async function runFullDailySync(): Promise<{
-  discovery: Awaited<ReturnType<typeof runVideoDiscovery>>;
+  discovery: { processed: number; errors: string[] };
   snapshot: Awaited<ReturnType<typeof runViewCountSnapshot>>;
   channelSync: Awaited<ReturnType<typeof runChannelSync>>;
   socialSync: Awaited<ReturnType<typeof runSocialAccountSync>>;
   alerts: number;
 }> {
-  // Run channel sync + social sync + legacy platform discovery in parallel
-  const [discovery, channelSync, socialSync] = await Promise.all([
-    runVideoDiscovery(),
+  // Run channel sync + social sync in parallel.
+  // Legacy runVideoDiscovery() (platform_accounts) is skipped — all YouTube discovery
+  // now happens through runChannelSync() which uses the youtube_channels table.
+  const [channelSync, socialSync] = await Promise.all([
     runChannelSync(),
     runSocialAccountSync(),
   ]);
+  const discovery = { processed: channelSync.newVideos, errors: channelSync.errors };
   const snapshot = await runViewCountSnapshot();
   const alerts = await runAlertEvaluation();
   await generateDailyReport();

@@ -72,6 +72,7 @@ import {
   generateWeeklyReport,
   runFullDailySync,
   runVideoDiscovery,
+  runChannelSync,
   runViewCountSnapshot,
 } from "./syncEngine";
 import { extractYouTubeVideoId, fetchYouTubeVideoInfo } from "./platformApi";
@@ -911,8 +912,9 @@ const adminRouter = router({
   }),
 
   syncVideosOnly: protectedProcedure.mutation(async () => {
-    const result = await runVideoDiscovery();
-    return result;
+    // Use runChannelSync (youtube_channels pipeline) instead of legacy runVideoDiscovery
+    const result = await runChannelSync();
+    return { processed: result.newVideos, errors: result.errors };
   }),
 
   syncViewCountsOnly: protectedProcedure.mutation(async () => {
