@@ -375,3 +375,33 @@
 - [x] Add server-side pagination to listByChannel (page, limit, total count)
 - [x] Update Channels.tsx video list to show paginated results with prev/next controls
 - [x] Sync now fetches up to 100 videos (was 30) to capture April 2026+ history
+
+## v2.27 — Fix listByChannel Cache Invalidation
+- [x] Fix: partial key invalidate({ channelId }) didn't match paginated cache key { channelId, page, limit }; fixed to no-arg invalidate() + explicit refetchVideos()
+
+## v2.28 — Fix fetchChannelUploads Pagination
+- [x] Fix: fetchChannelUploads was only reading the first page (~30 items); now paginates through getContinuation() pages until limit (100) videos are collected
+
+## v2.29 — Fix getContinuation() Flow
+- [x] Fix: Channel.getContinuation() returns ChannelListContinuation (different type); now correctly: collect first page from videosTab.videos, call videosTab.getContinuation() to get ChannelListContinuation, loop calling continuation.getContinuation() until limit reached or no more pages
+
+## v2.30 — Unified Sync Pipeline
+- [x] Fix: Admin Full Sync Now was using old runVideoDiscovery() (platform_accounts table) which crashed; now uses runChannelSync() for both paths
+- [x] Fix: runChannelSync now fetches 100 videos per channel (was 30)
+
+## v2.31 — Fix LockupView Property Paths (Root Cause Fix)
+
+- [x] Diagnose: YouTube now returns LockupView items instead of old Video/GridVideo format in youtubei.js v17
+- [x] Diagnose: page 1 items are in videosTab.page_contents.contents (NOT videosTab.videos)
+- [x] Diagnose: continuation items are in cont.contents.contents (NOT cont.videos)
+- [x] Diagnose: video ID is at item.content_id (NOT item.video_id)
+- [x] Diagnose: title is at item.metadata.title.text (NOT item.title.text)
+- [x] Diagnose: views/published are in item.metadata.metadata.metadata_rows[0].metadata_parts
+- [x] Diagnose: duration is at content_image.overlays[0].badges[0].text (ThumbnailBottomOverlayView)
+- [x] Fix: add parseDurationText() helper to parse "13:02" → 782 seconds
+- [x] Fix: add unwrapLockupItem() helper to unwrap container → LockupView, filter non-VIDEO items
+- [x] Fix: rewrite extractItemStats() with correct LockupView paths + legacy fallbacks
+- [x] Fix: rewrite fetchChannelUploads() to read page_contents.contents (page 1) and cont.contents.contents (continuation)
+- [x] Fix: update fetchChannelVideoStats() to also use page_contents.contents
+- [x] Verify: diagnostic script confirms 100 videos returned with 0 missing IDs/titles/views/durations
+- [x] Verify: all 61 tests still pass

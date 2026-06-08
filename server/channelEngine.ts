@@ -167,6 +167,18 @@ function parseRelativeDate(text: string): string {
   return toDateStr(new Date());
 }
 
+/**
+ * Parse a duration string like "13:02" or "1:23:45" into total seconds.
+ * Also handles plain numbers (treated as seconds).
+ */
+function parseDurationText(text: string): number {
+  if (!text) return 0;
+  const parts = String(text).split(":").map(p => parseInt(p, 10) || 0);
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return parts[0] ?? 0;
+}
+
 /** Safe number parse from any value (string with commas, number, etc.). */
 function safeNum(v: any): number {
   if (typeof v === "number") return v;
@@ -186,7 +198,17 @@ function bestThumb(thumbnails: any): string | null {
 
 /**
  * Extract all available stats from a single channel-listing video item.
- * The channel Videos tab returns rich metadata without requiring authentication.
+ * Supports both the new LockupView format (youtubei.js v17+) and the legacy
+ * GridVideo/Video format for backward compatibility.
+ *
+ * LockupView paths (YouTube as of 2025):
+ *   - content_id                                    → raw video ID
+ *   - metadata.title.text                           → title
+ *   - metadata.metadata.metadata_rows[0]            → row with views + published
+ *   - metadata_rows[0].metadata_parts[0].text.text  → "12K views"
+ *   - metadata_rows[0].metadata_parts[1].text.text  → "17 hours ago"
+ *   - content_image.overlays[0].badges[0].text      → "13:02" (duration)
+ *   - content_image.image (sorted by width desc)    → thumbnail URL
  */
 function extractItemStats(item: any): {
   rawId: string;
@@ -196,38 +218,95 @@ function extractItemStats(item: any): {
   publishedDate: string;
   thumbnailUrl: string | null;
 } {
-  // Raw video ID — channel listing uses video_id (not id)
+  // ── 1. Raw video ID ────────────────────────────────────────────────────────
+  // LockupView uses content_id; legacy format uses video_id / id
   const rawId: string =
+    item?.content_id ??
     item?.video_id ??
     item?.id ??
     item?.endpoint?.payload?.videoId ??
     "";
 
-  // Title
+  // ── 2. Title ───────────────────────────────────────────────────────────────
+  // LockupView: metadata.title.text
+  // Legacy: title.text or title.toString()
   const title: string =
-    item?.title?.toString() ??
+    item?.metadata?.title?.text ??
+    item?.metadata?.title?.runs?.[0]?.text ??
     item?.title?.text ??
+    item?.title?.toString() ??
     "Untitled";
 
-  // View count — "2,064 views" or "2K views"
-  const viewRaw: string =
-    item?.view_count?.toString() ??
-    item?.short_view_count?.toString() ??
-    "0";
+  // ── 3. Views + Published from metadata_rows ────────────────────────────────
+  // LockupView: metadata.metadata.metadata_rows[0].metadata_parts
+  //   parts[0].text.text = "12K views"
+  //   parts[1].text.text = "17 hours ago"
+  const metaRows: any[] = item?.metadata?.metadata?.metadata_rows ?? [];
+  const firstRow = metaRows[0];
+  const parts: any[] = firstRow?.metadata_parts ?? [];
+
+  // Find views part (contains "view")
+  let viewRaw = "0";
+  let publishedText = "";
+  for (const part of parts) {
+    const txt: string = part?.text?.text ?? part?.text?.runs?.[0]?.text ?? "";
+    if (txt.toLowerCase().includes("view")) {
+      viewRaw = txt;
+    } else if (
+      txt.toLowerCase().includes("ago") ||
+      txt.toLowerCase().includes("hour") ||
+      txt.toLowerCase().includes("day") ||
+      txt.toLowerCase().includes("week") ||
+      txt.toLowerCase().includes("month") ||
+      txt.toLowerCase().includes("year")
+    ) {
+      publishedText = txt;
+    }
+  }
+
+  // Fallback to legacy paths if LockupView metadata_rows were empty
+  if (viewRaw === "0") {
+    viewRaw =
+      item?.view_count?.toString() ??
+      item?.short_view_count?.toString() ??
+      "0";
+  }
+  if (!publishedText) {
+    publishedText = item?.published?.text ?? "";
+  }
+
   const viewCount = safeNum(viewRaw);
-
-  // Duration — item.duration is { text: "9:17", seconds: 557 }
-  const durationSeconds: number =
-    typeof item?.duration?.seconds === "number"
-      ? item.duration.seconds
-      : safeNum(item?.duration?.text ?? "0");
-
-  // Published date — item.published is { text: "1 hour ago" }
-  const publishedText: string = item?.published?.text ?? "";
   const publishedDate = publishedText ? parseRelativeDate(publishedText) : toDateStr(new Date());
 
-  // Thumbnail
-  const thumbnailUrl = bestThumb(item?.thumbnails ?? item?.thumbnail);
+  // ── 4. Duration ────────────────────────────────────────────────────────────
+  // LockupView: content_image.overlays[0] is ThumbnailBottomOverlayView
+  //   overlays[0].badges[0].text = "13:02"
+  // Legacy: duration.seconds or duration.text
+  let durationSeconds = 0;
+  const overlays: any[] = item?.content_image?.overlays ?? [];
+  for (const overlay of overlays) {
+    if (overlay?.type === "ThumbnailBottomOverlayView") {
+      const durationText: string = overlay?.badges?.[0]?.text ?? "";
+      if (durationText) {
+        durationSeconds = parseDurationText(durationText);
+        break;
+      }
+    }
+  }
+  if (durationSeconds === 0) {
+    // Legacy fallback
+    durationSeconds =
+      typeof item?.duration?.seconds === "number"
+        ? item.duration.seconds
+        : parseDurationText(item?.duration?.text ?? "0");
+  }
+
+  // ── 5. Thumbnail ───────────────────────────────────────────────────────────
+  // LockupView: content_image.image (array sorted by width desc)
+  // Legacy: thumbnails or thumbnail
+  const thumbnailUrl =
+    bestThumb(item?.content_image?.image) ??
+    bestThumb(item?.thumbnails ?? item?.thumbnail);
 
   return { rawId, title, viewCount, durationSeconds, publishedDate, thumbnailUrl };
 }
@@ -335,9 +414,33 @@ export async function resolveChannel(input: string): Promise<ChannelInfo> {
 }
 
 /**
+ * Unwrap a raw item from the channel listing to get the LockupView object.
+ * YouTube v17 wraps items in a container; the actual LockupView may be at
+ * item.content (if the wrapper has a content property) or the item itself.
+ * Only VIDEO content_type items are returned.
+ */
+function unwrapLockupItem(raw: any): any | null {
+  if (!raw) return null;
+  // Unwrap container → LockupView
+  const item = raw?.content ?? raw;
+  // Accept LockupView items or items with a content_id (video ID)
+  if (item?.type === "LockupView" || item?.content_id) {
+    // Only include actual videos (not playlists, mixes, etc.)
+    if (item?.content_type && item.content_type !== "VIDEO") return null;
+    return item;
+  }
+  return null;
+}
+
+/**
  * Fetch the last `limit` uploads from a channel (default 10).
  * Returns an array of DiscoveredVideo with full stats from the channel listing.
  * Stats are sourced directly from the Videos tab — no per-video API calls needed.
+ *
+ * YouTube v17 API changes:
+ *   - Page 1 items: videosTab.page_contents.contents (NOT videosTab.videos)
+ *   - Continuation items: cont.contents.contents (NOT cont.videos)
+ *   - Each item may be wrapped in a container; use unwrapLockupItem() to get the LockupView
  */
 export async function fetchChannelUploads(channelId: string, limit = 10): Promise<DiscoveredVideo[]> {
   let yt: Innertube;
@@ -361,9 +464,7 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
     throw new Error(`Failed to fetch channel data: ${msg}`);
   }
 
-  // Get the Videos tab — paginate through ChannelListContinuation pages to collect up to `limit` videos.
-  // channel.getVideos() returns the first page (~30 items).
-  // channel.getContinuation() / continuation.getContinuation() fetches subsequent pages.
+  // Get the Videos tab
   let videosTab: any;
   try {
     videosTab = await (channel as any).getVideos();
@@ -373,14 +474,22 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
 
   const allItems: any[] = [];
 
-  // Collect first page
+  // ── Page 1: read from page_contents.contents (LockupView v17 format) ─────────
+  // Fallback to legacy .videos / .items if page_contents is absent
   if (videosTab) {
-    const firstPageItems: any[] = videosTab?.videos ?? videosTab?.items ?? [];
-    allItems.push(...firstPageItems);
+    const page1Raw: any[] =
+      videosTab?.page_contents?.contents ??
+      videosTab?.videos ??
+      videosTab?.items ??
+      [];
+    for (const raw of page1Raw) {
+      const item = unwrapLockupItem(raw);
+      if (item) allItems.push(item);
+    }
+    console.log(`[channelEngine] fetchChannelUploads: page 1 raw=${page1Raw.length} valid=${allItems.length}`);
   }
 
-  // Paginate: getContinuation() on the Channel gives a ChannelListContinuation,
-  // then keep calling getContinuation() on that until we have enough or no more pages.
+  // ── Continuation pages: read from cont.contents.contents ─────────────────────
   if (videosTab && allItems.length < limit) {
     let continuation: any = null;
     try {
@@ -389,12 +498,28 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
       continuation = null;
     }
 
+    let pageNum = 2;
     while (continuation && allItems.length < limit) {
-      const pageItems: any[] = continuation?.videos ?? continuation?.items ?? [];
-      if (pageItems.length === 0) break;
-      allItems.push(...pageItems);
+      // LockupView v17: items are in cont.contents.contents
+      // Legacy fallback: cont.videos / cont.items
+      const contRaw: any[] =
+        continuation?.contents?.contents ??
+        continuation?.videos ??
+        continuation?.items ??
+        [];
+
+      if (contRaw.length === 0) break;
+
+      let added = 0;
+      for (const raw of contRaw) {
+        const item = unwrapLockupItem(raw);
+        if (item) { allItems.push(item); added++; }
+      }
+      console.log(`[channelEngine] fetchChannelUploads: page ${pageNum} raw=${contRaw.length} valid=${added} total=${allItems.length}`);
+      pageNum++;
 
       if (!continuation.has_continuation) break;
+      if (allItems.length >= limit) break;
 
       try {
         continuation = await continuation.getContinuation();
@@ -429,6 +554,7 @@ export async function fetchChannelUploads(channelId: string, limit = 10): Promis
     }
   }
 
+  console.log(`[channelEngine] fetchChannelUploads: returning ${results.length} videos for channel ${channelId}`);
   return results;
 }
 
@@ -452,9 +578,19 @@ export async function fetchChannelVideoStats(channelId: string, limit = 30): Pro
       return results;
     }
 
-    const items: any[] = videosTab?.videos ?? videosTab?.items ?? [];
+    // Use page_contents.contents for LockupView v17 format; fall back to legacy
+    const page1Raw: any[] =
+      videosTab?.page_contents?.contents ??
+      videosTab?.videos ??
+      videosTab?.items ??
+      [];
 
-    for (const item of items.slice(0, limit)) {
+    const items: any[] = page1Raw
+      .map(unwrapLockupItem)
+      .filter((x): x is any => x !== null)
+      .slice(0, limit);
+
+    for (const item of items) {
       try {
         const { rawId, title, viewCount, durationSeconds, publishedDate, thumbnailUrl } = extractItemStats(item);
         if (!rawId || rawId.length !== 11) continue;
