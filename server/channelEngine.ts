@@ -179,10 +179,25 @@ function parseDurationText(text: string): number {
   return parts[0] ?? 0;
 }
 
-/** Safe number parse from any value (string with commas, number, etc.). */
+/** Safe number parse from any value (string with commas, number, etc.).
+ * Handles K/M/B suffixes so "83K views" → 83000, "1.2M views" → 1200000.
+ */
 function safeNum(v: any): number {
   if (typeof v === "number") return v;
-  if (typeof v === "string") return parseInt(v.replace(/[^0-9]/g, ""), 10) || 0;
+  if (typeof v === "string") {
+    // Strip trailing label ("views", "likes", etc.) then parse with suffix support
+    const cleaned = v.trim();
+    const match = cleaned.match(/^([\.\d,]+)\s*([KkMmBb])?/);
+    if (match) {
+      const num = parseFloat(match[1].replace(/,/g, ""));
+      const suffix = (match[2] ?? "").toUpperCase();
+      if (suffix === "B") return Math.round(num * 1_000_000_000);
+      if (suffix === "M") return Math.round(num * 1_000_000);
+      if (suffix === "K") return Math.round(num * 1_000);
+      return Math.round(num) || 0;
+    }
+    return parseInt(cleaned.replace(/[^0-9]/g, ""), 10) || 0;
+  }
   return 0;
 }
 
