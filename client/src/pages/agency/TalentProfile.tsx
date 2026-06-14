@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import {
   ArrowLeft, Users, TrendingUp, DollarSign, Briefcase,
   Video, Link2, BarChart3, ExternalLink, Clock, Eye,
-  ThumbsUp, MessageSquare, CheckCircle2, AlertCircle, Star, Plus, MousePointerClick,
+  ThumbsUp, MessageSquare, CheckCircle2, AlertCircle, Star, Plus, MousePointerClick, Pencil, Image,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,6 +110,51 @@ export default function TalentProfile() {
     },
     onError: (e) => toast.error(e.message),
   });
+
+  // ── Edit deliverable state ──
+  const [editDelivOpen, setEditDelivOpen] = useState(false);
+  const [editDelivForm, setEditDelivForm] = useState<{
+    id: number; status: string; agreedFee: string; currency: string;
+    dueDate: string; briefNotes: string; videoId: string; screenshotUrl: string;
+  } | null>(null);
+
+  const updateDeliverable = trpc.deliverables.update.useMutation({
+    onSuccess: () => {
+      utils.affiliate.talentProfile.invalidate({ channelId: channelId ?? "" });
+      setEditDelivOpen(false);
+      setEditDelivForm(null);
+      toast.success("Deliverable updated");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function openEditDeliverable(d: any) {
+    setEditDelivForm({
+      id: d.id,
+      status: d.status ?? "brief_sent",
+      agreedFee: d.agreedFee != null ? String(d.agreedFee) : "",
+      currency: d.currency ?? "USD",
+      dueDate: d.dueDate ?? "",
+      briefNotes: d.briefNotes ?? "",
+      videoId: d.videoId ?? "",
+      screenshotUrl: d.screenshotUrl ?? "",
+    });
+    setEditDelivOpen(true);
+  }
+
+  function handleEditDelivSubmit() {
+    if (!editDelivForm) return;
+    updateDeliverable.mutate({
+      id: editDelivForm.id,
+      status: editDelivForm.status as any,
+      agreedFee: editDelivForm.agreedFee || "0",
+      currency: editDelivForm.currency,
+      dueDate: editDelivForm.dueDate || undefined,
+      briefNotes: editDelivForm.briefNotes || undefined,
+      videoId: editDelivForm.videoId || undefined,
+      screenshotUrl: editDelivForm.screenshotUrl || undefined,
+    });
+  }
 
   const chartData = useMemo(() => {
     if (!data?.viewTrend?.length) return null;
@@ -303,42 +348,64 @@ export default function TalentProfile() {
             <EmptyState icon={<Briefcase className="h-7 w-7" />} message="No campaigns assigned yet" />
           ) : (
             <div className="space-y-2">
-              {deliverables.map((d: any) => (
-                <div key={d.id} className="rounded-xl border bg-card px-4 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${CAMPAIGN_STATUS_COLORS[d.campaign_status] ?? "bg-muted text-muted-foreground"}`}>
-                          {d.campaign_status}
-                        </span>
-                        <p className="text-sm font-medium truncate">{d.campaign_name}</p>
+              {deliverables.map((d: any) => {
+                const isEditable = d.campaign_status !== "completed" && d.campaign_status !== "cancelled" && d.status !== "cancelled";
+                return (
+                  <div key={d.id} className="rounded-xl border bg-card px-4 py-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${CAMPAIGN_STATUS_COLORS[d.campaign_status] ?? "bg-muted text-muted-foreground"}`}>
+                            {d.campaign_status}
+                          </span>
+                          <p className="text-sm font-medium truncate">{d.campaign_name}</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">{d.client_name ?? "No client"} · {d.contentType?.replace(/_/g, " ") ?? d.content_type?.replace(/_/g, " ")}</p>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{d.client_name ?? "No client"} · {d.content_type?.replace(/_/g, " ")}</p>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${DELIVERABLE_STATUS_COLORS[d.status] ?? "bg-muted text-muted-foreground"}`}>
+                          {d.status?.replace(/_/g, " ")}
+                        </span>
+                        {isEditable && (
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => openEditDeliverable(d)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium shrink-0 ${DELIVERABLE_STATUS_COLORS[d.status] ?? "bg-muted text-muted-foreground"}`}>
-                      {d.status?.replace(/_/g, " ")}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                    {d.agreed_fee && parseFloat(d.agreed_fee) > 0 && (
-                      <span className="flex items-center gap-1 text-emerald-500 font-medium">
-                        <DollarSign className="h-3 w-3" /> {parseFloat(d.agreed_fee).toLocaleString()}
-                      </span>
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                      {(d.agreedFee ?? d.agreed_fee) && parseFloat(d.agreedFee ?? d.agreed_fee) > 0 && (
+                        <span className="flex items-center gap-1 text-emerald-500 font-medium">
+                          <DollarSign className="h-3 w-3" /> {parseFloat(d.agreedFee ?? d.agreed_fee).toLocaleString()} {d.currency}
+                        </span>
+                      )}
+                      {(d.dueDate ?? d.due_date) && <span>Due {d.dueDate ?? d.due_date}</span>}
+                      {(d.videoId ?? d.video_id) && (
+                        <a href={`https://youtube.com/watch?v=${d.videoId ?? d.video_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-500 hover:underline">
+                          <Video className="h-3 w-3" /> Video
+                        </a>
+                      )}
+                    </div>
+                    {/* Screenshot preview */}
+                    {(d.screenshotUrl) && (
+                      <div className="mt-1">
+                        <a href={d.screenshotUrl} target="_blank" rel="noopener noreferrer">
+                          <img
+                            src={d.screenshotUrl}
+                            alt="Screenshot"
+                            className="rounded-lg border max-h-40 object-cover hover:opacity-90 transition-opacity cursor-pointer"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        </a>
+                      </div>
                     )}
-                    {d.due_date && <span>Due {d.due_date}</span>}
-                    {d.video_id && (
-                      <a
-                        href={`https://youtube.com/watch?v=${d.video_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-blue-500 hover:underline"
-                      >
-                        <Video className="h-3 w-3" /> Video
-                      </a>
+                    {/* Brief notes */}
+                    {(d.briefNotes) && (
+                      <p className="text-xs text-muted-foreground italic border-t pt-2 mt-1">{d.briefNotes}</p>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -492,6 +559,70 @@ export default function TalentProfile() {
             <Button variant="outline" onClick={() => setAssignOpen(false)}>Cancel</Button>
             <Button onClick={handleAssignSubmit} disabled={createDeliverable.isPending}>
               {createDeliverable.isPending ? "Assigning..." : "Assign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit Deliverable Dialog ── */}
+      <Dialog open={editDelivOpen} onOpenChange={setEditDelivOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Deliverable</DialogTitle>
+          </DialogHeader>
+          {editDelivForm && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-1.5">
+                <Label>Status</Label>
+                <Select value={editDelivForm.status} onValueChange={(v) => setEditDelivForm(f => f ? { ...f, status: v } : f)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["brief_sent","script_review","filming","editing","review","published","cancelled"].map(s => (
+                      <SelectItem key={s} value={s}>{s.replace(/_/g, " ")}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Agreed Fee</Label>
+                  <Input type="number" min="0" placeholder="0" value={editDelivForm.agreedFee} onChange={(e) => setEditDelivForm(f => f ? { ...f, agreedFee: e.target.value } : f)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Currency</Label>
+                  <Select value={editDelivForm.currency} onValueChange={(v) => setEditDelivForm(f => f ? { ...f, currency: v } : f)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {["USD","EUR","GBP","SGD","AUD"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Due Date</Label>
+                <Input type="date" value={editDelivForm.dueDate} onChange={(e) => setEditDelivForm(f => f ? { ...f, dueDate: e.target.value } : f)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Video ID</Label>
+                <Input placeholder="YouTube video ID (e.g. dQw4w9WgXcQ)" value={editDelivForm.videoId} onChange={(e) => setEditDelivForm(f => f ? { ...f, videoId: e.target.value } : f)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5"><Image className="h-3.5 w-3.5" /> Screenshot / Proof URL</Label>
+                <Input placeholder="https://..." value={editDelivForm.screenshotUrl} onChange={(e) => setEditDelivForm(f => f ? { ...f, screenshotUrl: e.target.value } : f)} />
+                {editDelivForm.screenshotUrl && (
+                  <img src={editDelivForm.screenshotUrl} alt="Preview" className="rounded-lg border max-h-32 object-cover mt-1" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label>Brief Notes</Label>
+                <Textarea rows={3} placeholder="Notes, talking points..." value={editDelivForm.briefNotes} onChange={(e) => setEditDelivForm(f => f ? { ...f, briefNotes: e.target.value } : f)} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDelivOpen(false)}>Cancel</Button>
+            <Button onClick={handleEditDelivSubmit} disabled={updateDeliverable.isPending}>
+              {updateDeliverable.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>

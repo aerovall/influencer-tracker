@@ -389,6 +389,7 @@ export const campaignDeliverables = mysqlTable("campaign_deliverables", {
   currency: varchar("currency", { length: 10 }).default("USD").notNull(),
   videoId: varchar("video_id", { length: 100 }),        // FK to videos.video_id once published
   briefNotes: text("brief_notes"),
+  screenshotUrl: text("screenshot_url"),                // optional proof/screenshot URL
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

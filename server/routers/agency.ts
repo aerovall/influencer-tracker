@@ -286,6 +286,7 @@ export const deliverablesRouter = router({
       videoId: z.string().optional(),
       briefNotes: z.string().optional(),
       channelId: z.string().optional(),
+      screenshotUrl: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -301,6 +302,7 @@ export const deliverablesRouter = router({
         ...(rest.videoId !== undefined && { videoId: rest.videoId }),
         ...(rest.briefNotes !== undefined && { briefNotes: rest.briefNotes }),
         ...(rest.channelId !== undefined && { channelId: rest.channelId }),
+        ...(rest.screenshotUrl !== undefined && { screenshotUrl: rest.screenshotUrl }),
       }).where(eq(campaignDeliverables.id, id));
       return { ok: true };
     }),
@@ -360,7 +362,11 @@ export const affiliateRouter = router({
   updateLink: protectedProcedure
     .input(z.object({
       id: z.number(),
+      channelId: z.string().optional().nullable(),
+      campaignId: z.number().optional().nullable(),
+      talentName: z.string().optional(),
       url: z.string().url().optional(),
+      shortCode: z.string().optional(),
       commissionType: z.enum(["flat", "cpc", "cpa", "revenue_share"]).optional(),
       commissionRate: z.string().optional(),
       notes: z.string().optional(),
@@ -371,7 +377,11 @@ export const affiliateRouter = router({
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
       const { id, ...rest } = input;
       await db.update(affiliateLinks).set({
+        ...(rest.channelId !== undefined && { channelId: rest.channelId }),
+        ...(rest.campaignId !== undefined && { campaignId: rest.campaignId }),
+        ...(rest.talentName !== undefined && { talentName: rest.talentName }),
         ...(rest.url !== undefined && { url: rest.url }),
+        ...(rest.shortCode !== undefined && { shortCode: rest.shortCode }),
         ...(rest.commissionType !== undefined && { commissionType: rest.commissionType }),
         ...(rest.commissionRate !== undefined && { commissionRate: rest.commissionRate }),
         ...(rest.notes !== undefined && { notes: rest.notes }),
@@ -515,8 +525,10 @@ export const affiliateRouter = router({
           dueDate: campaignDeliverables.dueDate,
           status: campaignDeliverables.status,
           agreedFee: campaignDeliverables.agreedFee,
+          currency: campaignDeliverables.currency,
           briefNotes: campaignDeliverables.briefNotes,
           videoId: campaignDeliverables.videoId,
+          screenshotUrl: campaignDeliverables.screenshotUrl,
           campaignId: campaignDeliverables.campaignId,
           createdAt: campaignDeliverables.createdAt,
         })

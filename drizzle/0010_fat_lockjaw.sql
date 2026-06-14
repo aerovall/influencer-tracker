@@ -1,0 +1,1 @@
+ALTER TABLE `campaign_deliverables` ADD `screenshot_url` text;

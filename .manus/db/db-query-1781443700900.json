@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `campaign_deliverables` ADD `screenshot_url` text;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute ALTER TABLE `campaign_deliverables` ADD `screenshot_url` text;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1960
+}

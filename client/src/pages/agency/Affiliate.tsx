@@ -86,7 +86,7 @@ export default function AffiliatePage() {
       notes: form.notes || undefined,
     };
     if (editingId !== null) {
-      updateMutation.mutate({ id: editingId, ...payload });
+      updateMutation.mutate({ id: editingId, ...payload, channelId: payload.channelId ?? null, campaignId: payload.campaignId ?? null });
     } else {
       createMutation.mutate(payload);
     }
@@ -284,6 +284,21 @@ export default function AffiliatePage() {
             <div className="space-y-1.5">
               <Label>URL *</Label>
               <Input value={form.url} onChange={(e) => setForm(f => ({ ...f, url: e.target.value }))} placeholder="https://example.com/ref/talent" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Channel (links to Talent Profile)</Label>
+              <Select value={form.channelId} onValueChange={(v) => {
+                const ch = (channels as any[]).find((c: any) => c.channelId === v);
+                setForm(f => ({ ...f, channelId: v === "__none__" ? "" : v, talentName: ch?.channelName ?? f.talentName }));
+              }}>
+                <SelectTrigger><SelectValue placeholder="Select channel" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No channel</SelectItem>
+                  {(channels as any[]).map((c: any) => (
+                    <SelectItem key={c.channelId} value={c.channelId}>{c.channelName ?? c.channelId}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">

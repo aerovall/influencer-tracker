@@ -71,6 +71,13 @@
       "when": 1781435818928,
       "tag": "0009_worthless_anita_blake",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1781443689242,
+      "tag": "0010_fat_lockjaw",
+      "breakpoints": true
     }
   ]
 }
