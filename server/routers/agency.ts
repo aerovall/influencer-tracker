@@ -445,7 +445,11 @@ export const affiliateRouter = router({
                vc.view_count, vc.likes, vc.comments
         FROM view_counts vc
         INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${channelId}
-        WHERE vc.date = (SELECT MAX(vc2.date) FROM view_counts vc2 WHERE vc2.video_id = vc.video_id)
+        INNER JOIN (
+          SELECT video_id, MAX(date) AS max_date
+          FROM view_counts
+          GROUP BY video_id
+        ) latest ON latest.video_id = vc.video_id AND latest.max_date = vc.date
         ORDER BY vc.view_count DESC
         LIMIT 10
       `);
@@ -493,7 +497,11 @@ export const affiliateRouter = router({
         SELECT COALESCE(SUM(vc.view_count), 0) AS total
         FROM view_counts vc
         INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${channelId}
-        WHERE vc.date = (SELECT MAX(vc2.date) FROM view_counts vc2 WHERE vc2.video_id = vc.video_id)
+        INNER JOIN (
+          SELECT video_id, MAX(date) AS max_date
+          FROM view_counts
+          GROUP BY video_id
+        ) latest ON latest.video_id = vc.video_id AND latest.max_date = vc.date
       `);
       const totalViews = Number((totalViewsRaw as any)[0]?.[0]?.total ?? 0);
 
@@ -530,7 +538,11 @@ export const affiliateRouter = router({
         SELECT COALESCE(SUM(vc.view_count), 0) AS total
         FROM view_counts vc
         INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${ch.channelId}
-        WHERE vc.date = (SELECT MAX(vc2.date) FROM view_counts vc2 WHERE vc2.video_id = vc.video_id)
+        INNER JOIN (
+          SELECT video_id, MAX(date) AS max_date
+          FROM view_counts
+          GROUP BY video_id
+        ) latest ON latest.video_id = vc.video_id AND latest.max_date = vc.date
       `);
       const totalViews = Number((viewRows as any)[0]?.[0]?.total ?? 0);
 

@@ -490,8 +490,8 @@
 
 ## v2.39 — Analytics Features + Talent Profile Fix
 
-- [ ] Fix blank Talent Profile page (diagnose root cause — likely useParams vs useRoute mismatch or talentProfile query error)
-- [ ] #1 Video velocity tracker — views-per-day column in video list, sortable, color-coded by momentum
-- [ ] #8 Engagement rate trend — (likes+comments)/views over time per channel on Analytics page
-- [ ] #10 Deliverable performance breakdown — mini bar chart per deliverable on Campaign Detail (fee vs views vs engagement)
-- [ ] #14 Affiliate conversion funnel — clicks → conversions → revenue funnel chart per affiliate link on Affiliate page
+- [x] Fix blank Talent Profile page (diagnose root cause — likely useParams vs useRoute mismatch or talentProfile query error)
+- [x] #1 Video velocity tracker — views-per-day column in video list, sortable, color-coded by momentum
+- [x] #8 Engagement rate trend — (likes+comments)/views over time per channel on Analytics page
+- [x] #10 Deliverable performance breakdown — mini bar chart per deliverable on Campaign Detail (fee vs views vs engagement)
+- [x] #14 Affiliate conversion funnel — clicks → conversions → revenue funnel chart per affiliate link on Affiliate page
