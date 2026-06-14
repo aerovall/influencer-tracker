@@ -443,11 +443,9 @@ export const affiliateRouter = router({
       const topVideosRaw = await db.execute(sql`
         SELECT v.video_id, v.title, v.published_at, v.duration_seconds, v.thumbnail_url,
                vc.view_count, vc.likes, vc.comments
-        FROM (
-          SELECT video_id, MAX(date) AS max_date FROM view_counts GROUP BY video_id
-        ) AS latest
-        INNER JOIN view_counts vc ON vc.video_id = latest.video_id AND vc.date = latest.max_date
+        FROM view_counts vc
         INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${channelId}
+        WHERE vc.date = (SELECT MAX(vc2.date) FROM view_counts vc2 WHERE vc2.video_id = vc.video_id)
         ORDER BY vc.view_count DESC
         LIMIT 10
       `);
@@ -493,11 +491,9 @@ export const affiliateRouter = router({
 
       const totalViewsRaw = await db.execute(sql`
         SELECT COALESCE(SUM(vc.view_count), 0) AS total
-        FROM (
-          SELECT video_id, MAX(date) AS max_date FROM view_counts GROUP BY video_id
-        ) AS latest
-        INNER JOIN view_counts vc ON vc.video_id = latest.video_id AND vc.date = latest.max_date
+        FROM view_counts vc
         INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${channelId}
+        WHERE vc.date = (SELECT MAX(vc2.date) FROM view_counts vc2 WHERE vc2.video_id = vc.video_id)
       `);
       const totalViews = Number((totalViewsRaw as any)[0]?.[0]?.total ?? 0);
 
@@ -532,11 +528,9 @@ export const affiliateRouter = router({
       // Total views: sum of latest view_count per video for this channel
       const viewRows = await db.execute(sql`
         SELECT COALESCE(SUM(vc.view_count), 0) AS total
-        FROM (
-          SELECT video_id, MAX(date) AS max_date FROM view_counts GROUP BY video_id
-        ) AS latest
-        INNER JOIN view_counts vc ON vc.video_id = latest.video_id AND vc.date = latest.max_date
+        FROM view_counts vc
         INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${ch.channelId}
+        WHERE vc.date = (SELECT MAX(vc2.date) FROM view_counts vc2 WHERE vc2.video_id = vc.video_id)
       `);
       const totalViews = Number((viewRows as any)[0]?.[0]?.total ?? 0);
 

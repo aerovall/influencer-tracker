@@ -242,6 +242,76 @@ export default function CampaignDetailPage() {
         )}
       </div>
 
+      {/* Deliverable Performance Breakdown */}
+      {deliverables.length > 0 && (() => {
+        const statuses = ["brief_sent", "script_review", "filming", "editing", "review", "published", "cancelled"];
+        const statusCounts = statuses.map((s) => ({
+          status: s.replace(/_/g, " "),
+          count: deliverables.filter((d) => d.status === s).length,
+        })).filter((s) => s.count > 0);
+        const totalFee = deliverables.reduce((sum, d) => sum + (d.agreedFee ? parseFloat(d.agreedFee) : 0), 0);
+        const publishedCount = deliverables.filter((d) => d.status === "published").length;
+        const completionRate = deliverables.length > 0 ? Math.round((publishedCount / deliverables.length) * 100) : 0;
+        const contentTypes = Array.from(new Set(deliverables.map((d) => d.contentType)));
+        const typeBreakdown = contentTypes.map((t) => ({
+          type: t.replace(/_/g, " "),
+          count: deliverables.filter((d) => d.contentType === t).length,
+        }));
+        return (
+          <div className="rounded-xl border bg-card p-5 space-y-4">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Performance Breakdown</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Total Committed Fee</p>
+                <p className="text-lg font-bold">{totalFee > 0 ? `${deliverables[0]?.currency ?? "USD"} ${totalFee.toLocaleString()}` : "—"}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Published</p>
+                <p className="text-lg font-bold text-emerald-400">{publishedCount} / {deliverables.length}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Completion Rate</p>
+                <p className="text-lg font-bold">{completionRate}%</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">Content Types</p>
+                <p className="text-lg font-bold">{contentTypes.length}</p>
+              </div>
+            </div>
+            {/* Progress bar */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Pipeline Progress</span>
+                <span>{completionRate}% complete</span>
+              </div>
+              <div className="w-full bg-muted/30 rounded-full h-2 overflow-hidden">
+                <div
+                  className="h-2 rounded-full bg-emerald-500 transition-all duration-700"
+                  style={{ width: `${completionRate}%` }}
+                />
+              </div>
+            </div>
+            {/* Status distribution */}
+            <div className="flex flex-wrap gap-2">
+              {statusCounts.map(({ status, count }) => (
+                <span key={status} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-muted/40 text-foreground capitalize">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                  {status} <span className="font-bold text-amber-400">{count}</span>
+                </span>
+              ))}
+            </div>
+            {/* Content type breakdown */}
+            <div className="flex flex-wrap gap-2">
+              {typeBreakdown.map(({ type, count }) => (
+                <span key={type} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-muted/20 text-muted-foreground capitalize">
+                  {type} &times; {count}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Add/Edit Deliverable Dialog */}
       <Dialog open={dlgOpen} onOpenChange={setDlgOpen}>
         <DialogContent className="max-w-md">

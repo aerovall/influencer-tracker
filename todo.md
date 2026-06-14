@@ -487,3 +487,11 @@
 - [x] Add "Assign to Campaign" button on Talent Profile — dialog to pick campaign + fill deliverable details, calls deliverables.create
 - [x] Show total affiliate clicks KPI card on Talent Profile (sum of all affiliate link clicks for this talent)
 - [x] Add talent comparison view on Talents page — "Compare" toggle, select 2-3 talents, side-by-side KPI table
+
+## v2.39 — Analytics Features + Talent Profile Fix
+
+- [ ] Fix blank Talent Profile page (diagnose root cause — likely useParams vs useRoute mismatch or talentProfile query error)
+- [ ] #1 Video velocity tracker — views-per-day column in video list, sortable, color-coded by momentum
+- [ ] #8 Engagement rate trend — (likes+comments)/views over time per channel on Analytics page
+- [ ] #10 Deliverable performance breakdown — mini bar chart per deliverable on Campaign Detail (fee vs views vs engagement)
+- [ ] #14 Affiliate conversion funnel — clicks → conversions → revenue funnel chart per affiliate link on Affiliate page

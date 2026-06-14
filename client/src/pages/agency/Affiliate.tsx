@@ -175,6 +175,102 @@ export default function AffiliatePage() {
         </div>
       )}
 
+      {/* Conversion Funnel Summary */}
+      {links.length > 0 && (() => {
+        const activeLinks = links.filter((l: any) => l.isActive);
+        const totalClicks = links.reduce((s: number, l: any) => s + (l.totalClicks ?? 0), 0);
+        const totalConversions = links.reduce((s: number, l: any) => s + (l.totalConversions ?? 0), 0);
+        const totalRevenue = links.reduce((s: number, l: any) => s + parseFloat(l.totalRevenue ?? "0"), 0);
+        const convRate = totalClicks > 0 ? ((totalConversions / totalClicks) * 100).toFixed(1) : "0.0";
+        const revenuePerClick = totalClicks > 0 ? (totalRevenue / totalClicks).toFixed(2) : "0.00";
+        // Per-talent funnel rows
+        const byTalent = links.reduce((acc: Record<string, any>, l: any) => {
+          const name = l.talentName || "Unknown";
+          if (!acc[name]) acc[name] = { clicks: 0, conversions: 0, revenue: 0, links: 0 };
+          acc[name].clicks += l.totalClicks ?? 0;
+          acc[name].conversions += l.totalConversions ?? 0;
+          acc[name].revenue += parseFloat(l.totalRevenue ?? "0");
+          acc[name].links += 1;
+          return acc;
+        }, {});
+        const talentRows = Object.entries(byTalent)
+          .map(([name, s]: [string, any]) => ({ name, ...s, convRate: s.clicks > 0 ? ((s.conversions / s.clicks) * 100).toFixed(1) : "0.0" }))
+          .sort((a, b) => b.clicks - a.clicks);
+        return (
+          <div className="rounded-xl border bg-card p-5 space-y-5">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Conversion Funnel</h3>
+            {/* Funnel KPIs */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              {[
+                { label: "Active Links", value: activeLinks.length.toString() },
+                { label: "Total Clicks", value: totalClicks.toLocaleString() },
+                { label: "Conversions", value: totalConversions.toLocaleString() },
+                { label: "Conv. Rate", value: `${convRate}%` },
+                { label: "Revenue / Click", value: `$${revenuePerClick}` },
+              ].map(({ label, value }) => (
+                <div key={label} className="space-y-1">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className="text-lg font-bold">{value}</p>
+                </div>
+              ))}
+            </div>
+            {/* Visual funnel bars */}
+            <div className="space-y-2">
+              {[
+                { label: "Clicks", value: totalClicks, max: totalClicks, color: "bg-sky-500" },
+                { label: "Conversions", value: totalConversions, max: totalClicks, color: "bg-amber-400" },
+              ].map(({ label, value, max, color }) => (
+                <div key={label} className="space-y-1">
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{label}</span>
+                    <span className="font-medium text-foreground">{value.toLocaleString()}</span>
+                  </div>
+                  <div className="w-full bg-muted/30 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className={`h-2.5 rounded-full ${color} transition-all duration-700`}
+                      style={{ width: max > 0 ? `${(value / max) * 100}%` : "0%" }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            {/* Per-talent breakdown */}
+            {talentRows.length > 0 && (
+              <div className="rounded-lg border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b bg-muted/20">
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Talent</th>
+                      <th className="text-right px-3 py-2 font-medium text-muted-foreground">Links</th>
+                      <th className="text-right px-3 py-2 font-medium text-muted-foreground">Clicks</th>
+                      <th className="text-right px-3 py-2 font-medium text-muted-foreground">Conversions</th>
+                      <th className="text-right px-3 py-2 font-medium text-muted-foreground">Conv. Rate</th>
+                      <th className="text-right px-3 py-2 font-medium text-muted-foreground">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {talentRows.map((row: any, i: number) => (
+                      <tr key={row.name} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/10"}`}>
+                        <td className="px-3 py-2 font-medium">{row.name}</td>
+                        <td className="px-3 py-2 text-right text-muted-foreground">{row.links}</td>
+                        <td className="px-3 py-2 text-right">{row.clicks.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right">{row.conversions.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-right">
+                          <span className={`font-medium ${parseFloat(row.convRate) >= 5 ? "text-emerald-400" : parseFloat(row.convRate) >= 2 ? "text-amber-400" : "text-muted-foreground"}`}>
+                            {row.convRate}%
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right">{row.revenue > 0 ? `$${row.revenue.toLocaleString()}` : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>

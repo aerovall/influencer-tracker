@@ -107,22 +107,35 @@ export default function Analytics() {
       .map(([date, vals]) => ({ date: date.slice(5), ...vals }));
   }, [filteredTrends]);
 
-  // Engagement rate over time
+  // Engagement rate over time — per channel
   const engagementTrend = useMemo(() => {
-    const byDate = new Map<string, { total: number; count: number }>();
+    // byDate -> channel -> { totalEng, count }
+    const byDate = new Map<string, Map<string, { totalEng: number; count: number }>>();
     for (const row of filteredTrends) {
-      if (!byDate.has(row.date)) byDate.set(row.date, { total: 0, count: 0 });
-      const entry = byDate.get(row.date)!;
-      entry.total += parseFloat(String(row.engagementRate ?? 0));
-      entry.count += 1;
+      const name = row.influencerName?.trim() || "Unknown";
+      if (!byDate.has(row.date)) byDate.set(row.date, new Map());
+      const dateMap = byDate.get(row.date)!;
+      if (!dateMap.has(name)) dateMap.set(name, { totalEng: 0, count: 0 });
+      const entry = dateMap.get(name)!;
+      // Compute engagement from raw counts: (likes+comments)/views*100
+      const views = Number(row.viewCount ?? 0);
+      const likes = Number(row.likes ?? 0);
+      const comments = Number(row.comments ?? 0);
+      if (views > 0) {
+        entry.totalEng += ((likes + comments) / views) * 100;
+        entry.count += 1;
+      }
     }
     return Array.from(byDate.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, { total, count }]) => ({
-        date: date.slice(5),
-        engagementRate: count > 0 ? parseFloat((total / count).toFixed(4)) : 0,
-      }));
-  }, [filteredTrends]);
+      .map(([date, channelMap]) => {
+        const point: Record<string, string | number> = { date: date.slice(5) };
+        for (const [ch, { totalEng, count }] of Array.from(channelMap.entries())) {
+          point[ch] = count > 0 ? parseFloat((totalEng / count).toFixed(3)) : 0;
+        }
+        return point;
+      });
+  }, [filteredTrends]);  
 
   // Top videos by total views
   const topVideos = useMemo(() => {
@@ -291,7 +304,7 @@ export default function Analytics() {
 
         <Card className="border-border/50 bg-card/80">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold">Avg Engagement Rate Over Time</CardTitle>
+            <CardTitle className="text-base font-semibold">Engagement Rate Trend — Per Channel</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? <Skeleton className="h-48 w-full" /> : engagementTrend.length === 0 ? (
@@ -301,9 +314,20 @@ export default function Analytics() {
                 <LineChart data={engagementTrend}>
                   <CartesianGrid strokeDasharray="3 3" stroke="oklch(0.25 0.03 255)" />
                   <XAxis dataKey="date" tick={{ fontSize: 11, fill: "oklch(0.60 0.02 255)" }} />
-                  <YAxis tick={{ fontSize: 11, fill: "oklch(0.60 0.02 255)" }} tickFormatter={(v) => `${v.toFixed(1)}%`} />
-                  <Tooltip {...TOOLTIP_STYLE} formatter={(v: number) => [`${v.toFixed(2)}%`, "Engagement"]} />
-                  <Line type="monotone" dataKey="engagementRate" stroke="oklch(0.78 0.15 80)" strokeWidth={2} dot={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "oklch(0.60 0.02 255)" }} tickFormatter={(v) => `${(v as number).toFixed(1)}%`} />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v: number, name: string) => [`${v.toFixed(2)}%`, name]} />
+                  <Legend />
+                  {channelNames.map((ch, i) => (
+                    <Line
+                      key={ch}
+                      type="monotone"
+                      dataKey={ch}
+                      stroke={getChannelColor(ch, channelNames)}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                    />
+                  ))}
                 </LineChart>
               </ResponsiveContainer>
             )}

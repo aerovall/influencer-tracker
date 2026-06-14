@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, RefreshCw, Trash2, Youtube, ChevronRight, ChevronDown,
-  Eye, ThumbsUp, MessageCircle, Clock, ExternalLink, Pencil, Check, X,
+  Eye, ThumbsUp, MessageCircle, Clock, ExternalLink, Pencil, Check, X, TrendingUp,
   Instagram, Twitter, AlertCircle, Bot, Reply
 } from "lucide-react";
 
@@ -319,6 +319,25 @@ function VideoRow({ video }: { video: any }) {
             <Clock className="h-3.5 w-3.5" />
             {formatDuration(video.durationSeconds)}
           </div>
+        </td>
+        <td className="px-4 py-3">
+          {(() => {
+            const views = Number(latestStats?.viewCount ?? 0);
+            const publishedAt = video.publishedDate ? new Date(video.publishedDate) : null;
+            if (!publishedAt || isNaN(publishedAt.getTime()) || views === 0) {
+              return <span className="text-xs text-muted-foreground/40">—</span>;
+            }
+            const daysSince = Math.max(1, Math.floor((Date.now() - publishedAt.getTime()) / 86_400_000));
+            const vpd = views / daysSince;
+            const label = vpd >= 1000 ? `${(vpd / 1000).toFixed(1)}K/d` : `${Math.round(vpd)}/d`;
+            const color = vpd >= 5000 ? "text-emerald-400" : vpd >= 1000 ? "text-amber-400" : vpd >= 100 ? "text-sky-400" : "text-muted-foreground";
+            return (
+              <div className="flex items-center gap-1">
+                <TrendingUp className={`h-3.5 w-3.5 ${color}`} />
+                <span className={`text-xs font-medium ${color}`}>{label}</span>
+              </div>
+            );
+          })()}
         </td>
         <td className="px-4 py-3">
           {/* Use shillCount (always loaded) for badge; fall back to shills.length once expanded */}
@@ -691,6 +710,7 @@ function ChannelCard({ channel }: { channel: any }) {
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Likes</th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Comments</th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Duration</th>
+                    <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Velocity</th>
                     <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">Shills</th>
                   </tr>
                 </thead>
