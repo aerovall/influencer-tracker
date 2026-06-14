@@ -249,6 +249,24 @@ export async function getLatestViewCountByVideoId(videoId: string) {
   return result[0];
 }
 
+export async function getLatestViewCountsBulk(
+  videoIds: string[]
+): Promise<Record<string, typeof viewCounts.$inferSelect>> {
+  const db = await getDb();
+  if (!db || videoIds.length === 0) return {};
+  const rows = await db
+    .select()
+    .from(viewCounts)
+    .where(inArray(viewCounts.videoId, videoIds))
+    .orderBy(desc(viewCounts.date));
+  const map: Record<string, typeof viewCounts.$inferSelect> = {};
+  for (const row of rows) {
+    if (!map[row.videoId]) {
+      map[row.videoId] = row;
+    }
+  }
+  return map;
+}
 export async function insertViewCount(data: InsertViewCount) {
   const db = await getDb();
   if (!db) throw new Error("DB unavailable");

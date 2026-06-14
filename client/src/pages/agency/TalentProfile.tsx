@@ -4,7 +4,7 @@ import {
   ArrowLeft, Users, TrendingUp, DollarSign, Briefcase,
   Video, Link2, BarChart3, ExternalLink, Clock, Eye,
   ThumbsUp, CheckCircle2, AlertCircle, Plus, MousePointerClick,
-  Pencil, Image, Trash2, Loader2, Film,
+  Pencil, Image, Trash2, Loader2, Film, RefreshCw, MessageSquare, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,14 +120,31 @@ export default function TalentProfile() {
   });
   const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { data: channelVideos = [], isLoading: videosLoading } = trpc.videos.list.useQuery(
-    { channelId: channelId ?? undefined },
+  const [videoPage, setVideoPage] = useState(1);
+  const { data: enrichedData, isLoading: videosLoading, refetch: refetchVideos } = trpc.videos.listEnriched.useQuery(
+    { channelId: channelId ?? "", page: videoPage, limit: 30, search: videoSearch || undefined },
     { enabled: !!channelId }
   );
+  const channelVideos = enrichedData?.videos ?? [];
+  const videoTotal = enrichedData?.total ?? 0;
+
+  const syncChannel = trpc.channels.syncChannel.useMutation({
+    onSuccess: (res) => {
+      const label = res.channelName ? `${res.channelName}: ` : "";
+      if (res.newVideos > 0) {
+        toast.success(`${label}${res.newVideos} new video${res.newVideos !== 1 ? "s" : ""} discovered! Stats refreshed for ${res.updatedStats}.`);
+      } else {
+        toast.success(`${label}Already up to date — stats refreshed for ${res.updatedStats} video${res.updatedStats !== 1 ? "s" : ""}.`);
+      }
+      utils.videos.listEnriched.invalidate({ channelId: channelId ?? "" });
+      refetchVideos();
+    },
+    onError: (e) => toast.error(`Sync failed: ${e.message}`),
+  });
 
   const createVideo = trpc.videos.create.useMutation({
     onSuccess: () => {
-      utils.videos.list.invalidate({ channelId: channelId ?? undefined });
+      utils.videos.listEnriched.invalidate({ channelId: channelId ?? "" });
       setAddVideoOpen(false);
       setAddVideoForm({ videoUrl: "", title: "", publishedDate: new Date().toISOString().split("T")[0], thumbnailUrl: "", durationSeconds: undefined });
       setYtFetched(false);
@@ -138,7 +155,7 @@ export default function TalentProfile() {
 
   const deleteVideo = trpc.videos.delete.useMutation({
     onSuccess: () => {
-      utils.videos.list.invalidate({ channelId: channelId ?? undefined });
+      utils.videos.listEnriched.invalidate({ channelId: channelId ?? "" });
       toast.success("Video removed");
     },
     onError: (e) => toast.error(e.message),
@@ -311,10 +328,8 @@ export default function TalentProfile() {
   // ── Total affiliate clicks ──
   const totalAffiliateClicks = affiliateLinks.reduce((sum: number, l: any) => sum + Number(l.total_clicks ?? 0), 0);
 
-  // ── Filtered videos for Videos tab ──
-  const filteredVideos = (channelVideos as any[]).filter((v: any) =>
-    videoSearch === "" || (v.title ?? "").toLowerCase().includes(videoSearch.toLowerCase())
-  );
+  // Search is now server-side via listEnriched; filteredVideos = channelVideos directly
+  const filteredVideos = channelVideos as any[];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -468,16 +483,29 @@ export default function TalentProfile() {
         {/* ── VIDEOS TAB ── */}
         {activeTab === "videos" && (
           <div className="space-y-4">
+            {/* Toolbar */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <Input
                 placeholder="Search videos..."
                 value={videoSearch}
-                onChange={(e) => setVideoSearch(e.target.value)}
+                onChange={(e) => { setVideoSearch(e.target.value); setVideoPage(1); }}
                 className="max-w-xs"
               />
-              <Button size="sm" className="gap-2" onClick={() => setAddVideoOpen(true)}>
-                <Plus className="h-4 w-4" /> Add Video
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={syncChannel.isPending}
+                  onClick={() => syncChannel.mutate({ channelId: channelId ?? "" })}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${syncChannel.isPending ? "animate-spin" : ""}`} />
+                  {syncChannel.isPending ? "Syncing…" : "Sync from YouTube"}
+                </Button>
+                <Button size="sm" className="gap-2" onClick={() => setAddVideoOpen(true)}>
+                  <Plus className="h-4 w-4" /> Add Video
+                </Button>
+              </div>
             </div>
 
             {videosLoading ? (
@@ -485,60 +513,137 @@ export default function TalentProfile() {
                 {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
               </div>
             ) : filteredVideos.length === 0 ? (
-              <EmptyState icon={<Film className="h-7 w-7" />} message={videoSearch ? "No videos match your search" : "No videos tracked yet. Add a video or run a sync from Admin."} />
+              <EmptyState icon={<Film className="h-7 w-7" />} message={videoSearch ? "No videos match your search" : "No videos tracked yet. Add a video or sync from YouTube."} />
             ) : (
-              <div className="rounded-xl border bg-card overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border/50 bg-muted/20">
-                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
-                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Published</th>
-                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Video ID</th>
-                        <th className="px-4 py-3"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredVideos.map((video: any, idx: number) => (
-                        <tr
-                          key={video.videoId}
-                          className={`border-b border-border/30 hover:bg-accent/30 transition-colors ${idx % 2 === 0 ? "" : "bg-muted/10"}`}
-                        >
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2 max-w-sm">
-                              {video.thumbnailUrl && (
-                                <img src={video.thumbnailUrl} alt="" className="h-8 w-14 object-cover rounded shrink-0" />
+              <>
+                <div className="rounded-xl border bg-card overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border/50 bg-muted/20">
+                          <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-0"></th>
+                          <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap"><Eye className="h-3 w-3 inline mr-1" />Views</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap"><ThumbsUp className="h-3 w-3 inline mr-1" />Likes</th>
+                          <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap"><MessageSquare className="h-3 w-3 inline mr-1" />Comments</th>
+                          <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Top Comment</th>
+                          <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Campaign</th>
+                          <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Published</th>
+                          <th className="px-4 py-3 w-8"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredVideos.map((video: any, idx: number) => (
+                          <tr
+                            key={video.videoId}
+                            className={`border-b border-border/30 hover:bg-accent/30 transition-colors ${idx % 2 === 0 ? "" : "bg-muted/10"}`}
+                          >
+                            {/* Thumbnail */}
+                            <td className="px-3 py-2">
+                              {video.thumbnailUrl ? (
+                                <img src={video.thumbnailUrl} alt="" className="h-9 w-16 object-cover rounded shrink-0" />
+                              ) : (
+                                <div className="h-9 w-16 rounded bg-muted flex items-center justify-center shrink-0">
+                                  <Film className="h-3.5 w-3.5 text-muted-foreground/40" />
+                                </div>
                               )}
+                            </td>
+                            {/* Title */}
+                            <td className="px-4 py-2">
                               <a
                                 href={video.videoUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="font-medium truncate hover:text-primary transition-colors flex items-center gap-1"
+                                className="font-medium hover:text-primary transition-colors flex items-center gap-1 max-w-xs truncate"
                               >
-                                {video.title}
-                                <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
+                                <span className="truncate">{video.title}</span>
+                                <ExternalLink className="h-3 w-3 shrink-0 opacity-40" />
                               </a>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{video.publishedDate}</td>
-                          <td className="px-4 py-3">
-                            <code className="text-xs bg-muted/30 px-1.5 py-0.5 rounded font-mono">{video.videoId}</code>
-                          </td>
-                          <td className="px-4 py-3">
-                            <button
-                              onClick={() => deleteVideo.mutate({ videoId: video.videoId })}
-                              className="text-muted-foreground hover:text-destructive transition-colors"
-                              title="Remove video"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                              {(video.durationSeconds ?? 0) > 0 && (
+                                <span className="text-xs text-muted-foreground flex items-center gap-0.5 mt-0.5">
+                                  <Clock className="h-2.5 w-2.5" />{fmtDuration(video.durationSeconds)}
+                                </span>
+                              )}
+                            </td>
+                            {/* Views */}
+                            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums">
+                              {video.latestViews > 0 ? fmtNum(video.latestViews) : <span className="text-muted-foreground/40">—</span>}
+                            </td>
+                            {/* Likes */}
+                            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-rose-400">
+                              {video.latestLikes > 0 ? fmtNum(video.latestLikes) : <span className="text-muted-foreground/40">—</span>}
+                            </td>
+                            {/* Comments */}
+                            <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-sky-400">
+                              {video.latestComments > 0 ? fmtNum(video.latestComments) : <span className="text-muted-foreground/40">—</span>}
+                            </td>
+                            {/* Top Comment */}
+                            <td className="px-4 py-2 max-w-xs">
+                              {video.topCommentText ? (
+                                <div className="space-y-0.5">
+                                  <p className="text-xs text-muted-foreground truncate max-w-[200px]" title={video.topCommentText}>
+                                    “{video.topCommentText}”
+                                  </p>
+                                  <p className="text-xs text-muted-foreground/50">
+                                    {video.topCommentAuthor && <span>@{video.topCommentAuthor}</span>}
+                                    {video.topCommentLikes != null && video.topCommentLikes > 0 && (
+                                      <span className="ml-1">· {fmtNum(video.topCommentLikes)} ♥</span>
+                                    )}
+                                  </p>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground/30 text-xs">—</span>
+                              )}
+                            </td>
+                            {/* Campaign */}
+                            <td className="px-4 py-2">
+                              {video.linkedDeliverable ? (
+                                <div className="space-y-0.5">
+                                  <span className="text-xs font-medium text-foreground">{video.linkedDeliverable.campaignName ?? `Campaign #${video.linkedDeliverable.campaignId}`}</span>
+                                  <div className="flex items-center gap-1">
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${DELIVERABLE_STATUS_COLORS[video.linkedDeliverable.status] ?? "bg-muted text-muted-foreground"}`}>
+                                      {(video.linkedDeliverable.status ?? "").replace(/_/g, " ")}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground/30 text-xs">—</span>
+                              )}
+                            </td>
+                            {/* Published */}
+                            <td className="px-4 py-2 text-muted-foreground whitespace-nowrap text-xs">{video.publishedDate}</td>
+                            {/* Delete */}
+                            <td className="px-3 py-2">
+                              <button
+                                onClick={() => deleteVideo.mutate({ videoId: video.videoId })}
+                                className="text-muted-foreground hover:text-destructive transition-colors"
+                                title="Remove video"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+                {/* Pagination */}
+                {videoTotal > 30 && (
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span>{videoTotal} videos total</span>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" disabled={videoPage <= 1} onClick={() => setVideoPage(p => p - 1)}>
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span>Page {videoPage} of {Math.ceil(videoTotal / 30)}</span>
+                      <Button variant="outline" size="sm" disabled={videoPage >= Math.ceil(videoTotal / 30)} onClick={() => setVideoPage(p => p + 1)}>
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

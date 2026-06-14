@@ -644,6 +644,65 @@ const videosRouter = router({
         percent: job.total > 0 ? Math.round((job.done / job.total) * 100) : 0,
       };
     }),
+  /** List videos for a channel enriched with latest likes/comments/top-comment and linked campaign deliverable. */
+  listEnriched: protectedProcedure
+    .input(z.object({
+      channelId: z.string(),
+      page: z.number().min(1).default(1),
+      limit: z.number().min(1).max(100).default(30),
+      search: z.string().optional(),
+    }))
+    .query(async ({ input }) => {
+      const { getDb: _getDb } = await import("./db");
+      const { videos: vTable, viewCounts: vcTable, videoCommentSnapshots: vcsTable, campaignDeliverables: cdTable, campaigns: cTable } = await import("../drizzle/schema");
+      const { and: _and, eq: _eq, desc: _desc, like: _like, or: _or, sql: _sql } = await import("drizzle-orm");
+      const db = await _getDb();
+      if (!db) return { videos: [], total: 0 };
+      const conditions: any[] = [_eq(vTable.channelId, input.channelId), _eq(vTable.isActive, true)];
+      if (input.search) conditions.push(_like(vTable.title, `%${input.search}%`));
+      const offset = (input.page - 1) * input.limit;
+      // Get total count
+      const countRows = await db.select({ count: _sql<number>`COUNT(*)` }).from(vTable).where(_and(...conditions));
+      const total = Number(countRows[0]?.count ?? 0);
+      // Get paginated videos
+      const videoRows = await db.select().from(vTable).where(_and(...conditions)).orderBy(_desc(vTable.publishedDate)).limit(input.limit).offset(offset);
+      if (videoRows.length === 0) return { videos: [], total };
+      const videoIds: string[] = videoRows.map((v: any) => v.videoId as string);
+      // Bulk fetch latest view counts
+      const { getLatestViewCountsBulk: getVcBulk, getLatestCommentSnapshotsBulk: getCsBulk } = await import("./db");
+      const [vcMap, csMap] = await Promise.all([
+        getVcBulk(videoIds),
+        getCsBulk(videoIds),
+      ]);
+      // Bulk fetch linked campaign deliverables (where video_id matches)
+      const cdRows = await db
+        .select({ id: cdTable.id, videoId: cdTable.videoId, status: cdTable.status, campaignId: cdTable.campaignId, campaignName: cTable.name, contentType: cdTable.contentType })
+        .from(cdTable)
+        .leftJoin(cTable, _eq(cdTable.campaignId, cTable.id))
+        .where(_and(
+          _sql`${cdTable.videoId} IN (${_sql.join(videoIds.map((id: string) => _sql`${id}`), _sql`, `)})`
+        ));
+      const cdByVideoId: Record<string, typeof cdRows[0]> = {};
+      for (const row of cdRows) {
+        if (row.videoId && !cdByVideoId[row.videoId]) cdByVideoId[row.videoId] = row;
+      }
+      const enriched = (videoRows as any[]).map((v: any) => {
+        const vc = vcMap[v.videoId];
+        const cs = csMap[v.videoId];
+        const cd = cdByVideoId[v.videoId];
+        return {
+          ...v,
+          latestViews: vc?.viewCount ?? 0,
+          latestLikes: vc?.manualLikes ?? vc?.likes ?? cs?.likeCount ?? 0,
+          latestComments: vc?.manualComments ?? vc?.comments ?? (cs?.commentCountNum ?? 0),
+          topCommentAuthor: cs?.topCommentAuthor ?? null,
+          topCommentText: cs?.topCommentText ?? null,
+          topCommentLikes: cs?.topCommentLikesNum ?? null,
+          linkedDeliverable: cd ? { id: cd.id, campaignId: cd.campaignId, campaignName: cd.campaignName, status: cd.status, contentType: cd.contentType } : null,
+        };
+      });
+      return { videos: enriched, total };
+    }),
 });
 // ─── Analytics Routerr ─────────────────────────────────────────────────────────
 const analyticsRouter = router({
