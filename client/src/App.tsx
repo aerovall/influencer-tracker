@@ -12,6 +12,7 @@ import Shills from "./pages/Shills";
 import Reports from "./pages/Reports";
 import AdminPanel from "./pages/AdminPanel";
 import Channels from "./pages/Channels";
+import AgencyDashboardPage from "./pages/agency/AgencyDashboard";
 import ClientsPage from "./pages/agency/Clients";
 import CampaignsPage from "./pages/agency/Campaigns";
 import CampaignDetailPage from "./pages/agency/CampaignDetail";
@@ -32,6 +33,7 @@ function Router() {
         <Route path="/reports" component={Reports} />
         <Route path="/channels" component={Channels} />
         <Route path="/admin" component={AdminPanel} />
+        <Route path="/agency" component={AgencyDashboardPage} />
         <Route path="/agency/clients" component={ClientsPage} />
         <Route path="/agency/campaigns/:id" component={CampaignDetailPage} />
         <Route path="/agency/campaigns" component={CampaignsPage} />

@@ -43,6 +43,7 @@ const menuItems = [
 ];
 
 const agencyMenuItems = [
+  { icon: LayoutDashboard, label: "Overview", path: "/agency" },
   { icon: Users, label: "Clients", path: "/agency/clients" },
   { icon: Megaphone, label: "Campaigns", path: "/agency/campaigns" },
   { icon: Star, label: "Talents", path: "/agency/talents" },
@@ -277,7 +278,9 @@ function DashboardLayoutContent({
 
               {/* Agency sub-items */}
               {(agencyOpen || isCollapsed) && agencyMenuItems.map(item => {
-                const isActive = location === item.path || location.startsWith(item.path + "/");
+                const isActive = item.path === "/agency"
+                  ? location === "/agency"
+                  : location === item.path || location.startsWith(item.path + "/");
                 return (
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
