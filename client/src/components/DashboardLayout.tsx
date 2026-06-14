@@ -139,6 +139,12 @@ function DashboardLayoutContent({
     return location.startsWith("/agency") || localStorage.getItem("agency-section-open") === "true";
   });
 
+  // Persist tracker/settings section open/close state
+  const [trackerOpen, setTrackerOpen] = useState(() => {
+    const trackerPaths = ["/", "/channels", "/analytics", "/shills", "/reports", "/admin"];
+    return trackerPaths.some(p => location === p) || localStorage.getItem("tracker-section-open") === "true";
+  });
+
   const activeMenuItem = [...menuItems, ...agencyMenuItems].find(item => item.path === location);
 
   // Poll for unseen new videos every 60 seconds to drive the Channels nav badge
@@ -153,7 +159,16 @@ function DashboardLayoutContent({
   }, [agencyOpen]);
 
   useEffect(() => {
+    localStorage.setItem("tracker-section-open", trackerOpen ? "true" : "false");
+  }, [trackerOpen]);
+
+  useEffect(() => {
     if (location.startsWith("/agency")) setAgencyOpen(true);
+  }, [location]);
+
+  useEffect(() => {
+    const trackerPaths = ["/", "/channels", "/analytics", "/shills", "/reports", "/admin"];
+    if (trackerPaths.some(p => location === p)) setTrackerOpen(true);
   }, [location]);
 
   useEffect(() => {
@@ -212,7 +227,7 @@ function DashboardLayoutContent({
               {!isCollapsed ? (
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="font-semibold tracking-tight truncate text-gold" style={{color: 'oklch(0.78 0.15 80)'}}>
-                    Influencer Tracker
+                    Talent Tracker
                   </span>
                 </div>
               ) : null}
@@ -220,44 +235,8 @@ function DashboardLayoutContent({
           </SidebarHeader>
 
           <SidebarContent className="gap-0 overflow-y-auto">
-            {/* Main nav */}
-            <SidebarMenu className="px-2 py-1">
-              {menuItems.map(item => {
-                const isActive = location === item.path;
-                return (
-                  <SidebarMenuItem key={item.path}>
-                    <SidebarMenuButton
-                      isActive={isActive}
-                      onClick={() => setLocation(item.path)}
-                      tooltip={item.label}
-                      className={`h-10 transition-all font-normal`}
-                    >
-                      <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
-                      />
-                      <span className="flex-1">{item.label}</span>
-                      {item.path === "/channels" && unseenCount > 0 && (
-                        <span
-                          className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none bg-primary text-primary-foreground"
-                          title={`${unseenCount} new video${unseenCount !== 1 ? 's' : ''} discovered`}
-                        >
-                          {unseenCount > 99 ? "99+" : unseenCount}
-                        </span>
-                      )}
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
 
-            {/* Agency section divider */}
-            {!isCollapsed && (
-              <div className="px-4 py-1">
-                <div className="border-t border-border/50" />
-              </div>
-            )}
-
-            {/* Agency section header */}
+            {/* ── Agency section (top) ── */}
             <SidebarMenu className="px-2 py-1">
               <SidebarMenuItem>
                 <SidebarMenuButton
@@ -297,6 +276,61 @@ function DashboardLayoutContent({
                 );
               })}
             </SidebarMenu>
+
+            {/* Divider */}
+            {!isCollapsed && (
+              <div className="px-4 py-1">
+                <div className="border-t border-border/50" />
+              </div>
+            )}
+
+            {/* ── Tracker / Settings section (bottom collapsible) ── */}
+            <SidebarMenu className="px-2 py-1">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={() => setTrackerOpen(o => !o)}
+                  tooltip="Tracker / Settings"
+                  className="h-10 transition-all font-medium text-muted-foreground hover:text-foreground"
+                >
+                  <Settings className="h-4 w-4" />
+                  <span className="flex-1">Tracker / Settings</span>
+                  {!isCollapsed && (
+                    trackerOpen
+                      ? <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                      : <ChevronRight className="h-3.5 w-3.5 opacity-60" />
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* Tracker sub-items */}
+              {(trackerOpen || isCollapsed) && menuItems.map(item => {
+                const isActive = location === item.path;
+                return (
+                  <SidebarMenuItem key={item.path}>
+                    <SidebarMenuButton
+                      isActive={isActive}
+                      onClick={() => setLocation(item.path)}
+                      tooltip={item.label}
+                      className={`h-9 transition-all font-normal ${!isCollapsed ? "pl-6" : ""}`}
+                    >
+                      <item.icon
+                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
+                      />
+                      <span className="flex-1">{item.label}</span>
+                      {item.path === "/channels" && unseenCount > 0 && (
+                        <span
+                          className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold leading-none bg-primary text-primary-foreground"
+                          title={`${unseenCount} new video${unseenCount !== 1 ? 's' : ''} discovered`}
+                        >
+                          {unseenCount > 99 ? "99+" : unseenCount}
+                        </span>
+                      )}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+
           </SidebarContent>
 
           <SidebarFooter className="p-3">

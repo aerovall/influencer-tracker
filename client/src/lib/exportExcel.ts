@@ -1144,8 +1144,8 @@ function buildDailyReportsSheet(reports: any[]): XLSX.WorkSheet {
 export function downloadDashboardExcel(data: any) {
   const wb = XLSX.utils.book_new();
   wb.Props = {
-    Title:   "Influencer Tracker Export",
-    Author:  "Influencer Tracker",
+    Title:   "Talent Tracker Export",
+    Author:  "Talent Tracker",
     Subject: "Dashboard Statistics",
     CreatedDate: new Date(),
   };
@@ -1159,5 +1159,5 @@ export function downloadDashboardExcel(data: any) {
   // Daily/Weekly Report sheets removed per user request
 
   const dateStr = new Date().toISOString().split("T")[0];
-  XLSX.writeFile(wb, `influencer-tracker-${dateStr}.xlsx`, { cellStyles: true });
+  XLSX.writeFile(wb, `talent-tracker-${dateStr}.xlsx`, { cellStyles: true });
 }
