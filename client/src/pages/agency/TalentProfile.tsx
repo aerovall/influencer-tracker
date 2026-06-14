@@ -5,6 +5,7 @@ import {
   Video, Link2, BarChart3, ExternalLink, Clock, Eye,
   ThumbsUp, CheckCircle2, AlertCircle, Plus, MousePointerClick,
   Pencil, Image, Trash2, Loader2, Film, RefreshCw, MessageSquare, ChevronLeft, ChevronRight,
+  ChevronDown, Save, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -331,6 +332,31 @@ export default function TalentProfile() {
   // Search is now server-side via listEnriched; filteredVideos = channelVideos directly
   const filteredVideos = channelVideos as any[];
 
+  // Expandable video row state
+  const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
+  const { data: videoShills = [], refetch: refetchShills } = trpc.shills.listByVideo.useQuery(
+    { videoId: expandedVideoId ?? "" },
+    { enabled: !!expandedVideoId }
+  );
+  const [shillForm, setShillForm] = useState({ productBrand: "", campaignId: "", timestamp: "0:00", lengthSeconds: 30, promoType: "Verbal mention", notes: "" });
+  const createShill = trpc.shills.create.useMutation({
+    onSuccess: () => { refetchShills(); setShillForm({ productBrand: "", campaignId: "", timestamp: "0:00", lengthSeconds: 30, promoType: "Verbal mention", notes: "" }); toast.success("Sponsorship added"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteShill = trpc.shills.delete.useMutation({
+    onSuccess: () => { refetchShills(); toast.success("Sponsorship removed"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateShillMutation = trpc.shills.update.useMutation({
+    onSuccess: () => { refetchShills(); toast.success("Updated"); },
+    onError: (e) => toast.error(e.message),
+  });
+  // Campaign link column: update deliverable video_id
+  const updateDeliverableVideoId = trpc.deliverables.update.useMutation({
+    onSuccess: () => { utils.videos.listEnriched.invalidate({ channelId: channelId ?? "" }); toast.success("Campaign linked"); },
+    onError: (e) => toast.error(e.message),
+  });
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* ── Back ── */}
@@ -521,49 +547,60 @@ export default function TalentProfile() {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border/50 bg-muted/20">
-                          <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider w-0"></th>
-                          <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
+                          <th className="px-3 py-3 w-8"></th>
+                          <th className="text-left px-3 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Video</th>
                           <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap"><Eye className="h-3 w-3 inline mr-1" />Views</th>
                           <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap"><ThumbsUp className="h-3 w-3 inline mr-1" />Likes</th>
                           <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap"><MessageSquare className="h-3 w-3 inline mr-1" />Comments</th>
                           <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Top Comment</th>
                           <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Campaign</th>
                           <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">Published</th>
-                          <th className="px-4 py-3 w-8"></th>
+                          <th className="px-3 py-3 w-8"></th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredVideos.map((video: any, idx: number) => (
+                        {filteredVideos.map((video: any, idx: number) => {
+                          const isExpanded = expandedVideoId === video.videoId;
+                          const PROMO_TYPES = ["Verbal mention","On-screen visual","Dedicated video","Description link","Mid-roll mention","Verbal mention, On-screen visual","Mid-roll mention, On-screen visual","Integration","Pre-roll","Post-roll"];
+                          return (
+                          <>
                           <tr
                             key={video.videoId}
-                            className={`border-b border-border/30 hover:bg-accent/30 transition-colors ${idx % 2 === 0 ? "" : "bg-muted/10"}`}
+                            className={`border-b border-border/30 cursor-pointer hover:bg-accent/30 transition-colors ${isExpanded ? "bg-accent/20" : idx % 2 === 0 ? "" : "bg-muted/10"}`}
+                            onClick={() => setExpandedVideoId(isExpanded ? null : video.videoId)}
                           >
-                            {/* Thumbnail */}
-                            <td className="px-3 py-2">
-                              {video.thumbnailUrl ? (
-                                <img src={video.thumbnailUrl} alt="" className="h-9 w-16 object-cover rounded shrink-0" />
-                              ) : (
-                                <div className="h-9 w-16 rounded bg-muted flex items-center justify-center shrink-0">
-                                  <Film className="h-3.5 w-3.5 text-muted-foreground/40" />
-                                </div>
-                              )}
+                            {/* Expand toggle */}
+                            <td className="px-3 py-2 text-muted-foreground">
+                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                             </td>
-                            {/* Title */}
-                            <td className="px-4 py-2">
-                              <a
-                                href={video.videoUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="font-medium hover:text-primary transition-colors flex items-center gap-1 max-w-xs truncate"
-                              >
-                                <span className="truncate">{video.title}</span>
-                                <ExternalLink className="h-3 w-3 shrink-0 opacity-40" />
-                              </a>
-                              {(video.durationSeconds ?? 0) > 0 && (
-                                <span className="text-xs text-muted-foreground flex items-center gap-0.5 mt-0.5">
-                                  <Clock className="h-2.5 w-2.5" />{fmtDuration(video.durationSeconds)}
-                                </span>
-                              )}
+                            {/* Thumbnail + Title */}
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-3">
+                                {video.thumbnailUrl ? (
+                                  <img src={video.thumbnailUrl} alt="" className="h-9 w-16 object-cover rounded shrink-0" />
+                                ) : (
+                                  <div className="h-9 w-16 rounded bg-muted flex items-center justify-center shrink-0">
+                                    <Film className="h-3.5 w-3.5 text-muted-foreground/40" />
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <a
+                                    href={video.videoUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="font-medium hover:text-primary transition-colors flex items-center gap-1 max-w-xs"
+                                  >
+                                    <span className="truncate text-sm">{video.title}</span>
+                                    <ExternalLink className="h-3 w-3 shrink-0 opacity-40" />
+                                  </a>
+                                  {(video.durationSeconds ?? 0) > 0 && (
+                                    <span className="text-xs text-muted-foreground flex items-center gap-0.5 mt-0.5">
+                                      <Clock className="h-2.5 w-2.5" />{fmtDuration(video.durationSeconds)}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </td>
                             {/* Views */}
                             <td className="px-4 py-2 text-right font-mono text-xs tabular-nums">
@@ -582,7 +619,7 @@ export default function TalentProfile() {
                               {video.topCommentText ? (
                                 <div className="space-y-0.5">
                                   <p className="text-xs text-muted-foreground truncate max-w-[200px]" title={video.topCommentText}>
-                                    “{video.topCommentText}”
+                                    "{video.topCommentText}"
                                   </p>
                                   <p className="text-xs text-muted-foreground/50">
                                     {video.topCommentAuthor && <span>@{video.topCommentAuthor}</span>}
@@ -595,25 +632,42 @@ export default function TalentProfile() {
                                 <span className="text-muted-foreground/30 text-xs">—</span>
                               )}
                             </td>
-                            {/* Campaign */}
-                            <td className="px-4 py-2">
-                              {video.linkedDeliverable ? (
-                                <div className="space-y-0.5">
-                                  <span className="text-xs font-medium text-foreground">{video.linkedDeliverable.campaignName ?? `Campaign #${video.linkedDeliverable.campaignId}`}</span>
-                                  <div className="flex items-center gap-1">
-                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${DELIVERABLE_STATUS_COLORS[video.linkedDeliverable.status] ?? "bg-muted text-muted-foreground"}`}>
-                                      {(video.linkedDeliverable.status ?? "").replace(/_/g, " ")}
-                                    </span>
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground/30 text-xs">—</span>
+                            {/* Campaign — dropdown selector */}
+                            <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                              <Select
+                                value={video.linkedDeliverable ? String(video.linkedDeliverable.campaignId) : ""}
+                                onValueChange={(val) => {
+                                  if (!val) return;
+                                  // Find a deliverable for this campaign linked to this channel and update its video_id
+                                  const deliverable = deliverables.find((d: any) => String(d.campaign_id ?? d.campaignId) === val);
+                                  if (deliverable) {
+                                    updateDeliverableVideoId.mutate({ id: deliverable.id, videoId: video.videoId });
+                                  } else {
+                                    toast.error("No deliverable found for this campaign on this talent. Create one in the Campaigns tab first.");
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-[160px] border-dashed">
+                                  <SelectValue placeholder="Link campaign…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {campaigns.map((c: any) => (
+                                    <SelectItem key={c.campaign.id} value={String(c.campaign.id)} className="text-xs">
+                                      {c.campaign.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {video.linkedDeliverable && (
+                                <span className={`mt-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${DELIVERABLE_STATUS_COLORS[video.linkedDeliverable.status] ?? "bg-muted text-muted-foreground"}`}>
+                                  {(video.linkedDeliverable.status ?? "").replace(/_/g, " ")}
+                                </span>
                               )}
                             </td>
                             {/* Published */}
                             <td className="px-4 py-2 text-muted-foreground whitespace-nowrap text-xs">{video.publishedDate}</td>
                             {/* Delete */}
-                            <td className="px-3 py-2">
+                            <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                               <button
                                 onClick={() => deleteVideo.mutate({ videoId: video.videoId })}
                                 className="text-muted-foreground hover:text-destructive transition-colors"
@@ -623,7 +677,131 @@ export default function TalentProfile() {
                               </button>
                             </td>
                           </tr>
-                        ))}
+                          {/* ── Expanded Sponsorship Log ── */}
+                          {isExpanded && (
+                            <tr key={`${video.videoId}-shill`} className="bg-muted/5 border-b border-border/30">
+                              <td colSpan={9} className="px-6 py-4">
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between">
+                                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sponsorship Log</p>
+                                    <span className="text-xs text-muted-foreground/50">{video.videoId}</span>
+                                  </div>
+                                  {/* Existing shills */}
+                                  {(videoShills as any[]).length > 0 ? (
+                                    <table className="w-full text-xs">
+                                      <thead>
+                                        <tr className="border-b border-border/30">
+                                          <th className="text-left py-1 pr-3 text-muted-foreground font-medium uppercase tracking-wider">Shill ID</th>
+                                          <th className="text-left py-1 pr-3 text-muted-foreground font-medium uppercase tracking-wider">Campaign / Brand</th>
+                                          <th className="text-left py-1 pr-3 text-muted-foreground font-medium uppercase tracking-wider">Timestamp</th>
+                                          <th className="text-left py-1 pr-3 text-muted-foreground font-medium uppercase tracking-wider">Length (s)</th>
+                                          <th className="text-left py-1 pr-3 text-muted-foreground font-medium uppercase tracking-wider">Promo Type</th>
+                                          <th className="py-1 w-6"></th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {(videoShills as any[]).map((s: any) => (
+                                          <tr key={s.shillId} className="border-b border-border/20 hover:bg-accent/10">
+                                            <td className="py-1.5 pr-3 text-muted-foreground/60 font-mono">{s.shillId}</td>
+                                            <td className="py-1.5 pr-3 font-medium">
+                                              {s.campaignId
+                                                ? (campaigns.find((c: any) => c.campaign.id === s.campaignId)?.campaign.name ?? `Campaign #${s.campaignId}`)
+                                                : s.productBrand}
+                                            </td>
+                                            <td className="py-1.5 pr-3 font-mono">{s.timestamp}</td>
+                                            <td className="py-1.5 pr-3 font-mono">{s.lengthSeconds}</td>
+                                            <td className="py-1.5 pr-3">
+                                              <Select
+                                                value={s.promoType}
+                                                onValueChange={(val) => updateShillMutation.mutate({ shillId: s.shillId, promoType: val })}
+                                              >
+                                                <SelectTrigger className="h-6 text-xs w-[180px] border-0 bg-transparent p-0 focus:ring-0">
+                                                  <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                  {PROMO_TYPES.map((p) => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
+                                                </SelectContent>
+                                              </Select>
+                                            </td>
+                                            <td className="py-1.5">
+                                              <button onClick={() => deleteShill.mutate({ shillId: s.shillId })} className="text-muted-foreground/40 hover:text-destructive">
+                                                <X className="h-3 w-3" />
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground/50 text-center py-2">No sponsorships logged yet. Add one below.</p>
+                                  )}
+                                  {/* Add new shill row */}
+                                  <div className="flex items-end gap-2 flex-wrap border-t border-border/30 pt-3">
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-xs text-muted-foreground uppercase tracking-wider">Campaign</label>
+                                      <Select
+                                        value={shillForm.campaignId}
+                                        onValueChange={(val) => {
+                                          const camp = campaigns.find((c: any) => String(c.campaign.id) === val);
+                                          setShillForm(f => ({ ...f, campaignId: val, productBrand: camp?.campaign.name ?? f.productBrand }));
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-7 text-xs w-[160px]"><SelectValue placeholder="Select campaign…" /></SelectTrigger>
+                                        <SelectContent>
+                                          {campaigns.map((c: any) => <SelectItem key={c.campaign.id} value={String(c.campaign.id)} className="text-xs">{c.campaign.name}</SelectItem>)}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-xs text-muted-foreground uppercase tracking-wider">Brand</label>
+                                      <Input
+                                        className="h-7 text-xs w-[120px]"
+                                        placeholder="Brand name"
+                                        value={shillForm.productBrand}
+                                        onChange={(e) => setShillForm(f => ({ ...f, productBrand: e.target.value }))}
+                                      />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-xs text-muted-foreground uppercase tracking-wider">Timestamp</label>
+                                      <Input className="h-7 text-xs w-[70px]" placeholder="0:00" value={shillForm.timestamp}
+                                        onChange={(e) => setShillForm(f => ({ ...f, timestamp: e.target.value }))} />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-xs text-muted-foreground uppercase tracking-wider">Length (s)</label>
+                                      <Input className="h-7 text-xs w-[70px]" type="number" value={shillForm.lengthSeconds}
+                                        onChange={(e) => setShillForm(f => ({ ...f, lengthSeconds: Number(e.target.value) }))} />
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                      <label className="text-xs text-muted-foreground uppercase tracking-wider">Promo Type</label>
+                                      <Select value={shillForm.promoType} onValueChange={(val) => setShillForm(f => ({ ...f, promoType: val }))}>
+                                        <SelectTrigger className="h-7 text-xs w-[180px]"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                          {PROMO_TYPES.map((p) => <SelectItem key={p} value={p} className="text-xs">{p}</SelectItem>)}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <Button
+                                      size="sm"
+                                      className="h-7 gap-1 text-xs"
+                                      disabled={createShill.isPending || !shillForm.productBrand}
+                                      onClick={() => createShill.mutate({
+                                        videoId: video.videoId,
+                                        productBrand: shillForm.productBrand,
+                                        campaignId: shillForm.campaignId ? parseInt(shillForm.campaignId) : undefined,
+                                        timestamp: shillForm.timestamp || "0:00",
+                                        lengthSeconds: shillForm.lengthSeconds,
+                                        promoType: shillForm.promoType,
+                                      })}
+                                    >
+                                      <Save className="h-3 w-3" /> Save
+                                    </Button>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                          </>
+                        )})}
                       </tbody>
                     </table>
                   </div>

@@ -809,13 +809,18 @@ const shillsRouter = router({
   list: protectedProcedure
     .input(z.object({ videoId: z.string().optional(), brand: z.string().optional() }).optional())
     .query(({ input }) => getAllShills(input)),
-
+  listByVideo: protectedProcedure
+    .input(z.object({ videoId: z.string() }))
+    .query(async ({ input }) => {
+      const rows = await getAllShills({ videoId: input.videoId });
+      return rows;
+    }),
   brandSummary: protectedProcedure.query(() => getShillBrandSummary()),
-
   create: protectedProcedure
     .input(z.object({
       videoId: z.string(),
       productBrand: z.string().min(1),
+      campaignId: z.number().int().optional().nullable(),
       timestamp: z.string().regex(/^\d{1,2}:\d{2}$/),
       lengthSeconds: z.number().int().positive(),
       promoType: z.string().min(1),
@@ -826,6 +831,7 @@ const shillsRouter = router({
         shillId: `shl_${nanoid(10)}`,
         videoId: input.videoId,
         productBrand: input.productBrand,
+        campaignId: input.campaignId ?? null,
         timestamp: input.timestamp,
         lengthSeconds: input.lengthSeconds,
         promoType: input.promoType,
@@ -833,11 +839,11 @@ const shillsRouter = router({
       });
       return { success: true };
     }),
-
   update: protectedProcedure
     .input(z.object({
       shillId: z.string(),
       productBrand: z.string().optional(),
+      campaignId: z.number().int().optional().nullable(),
       timestamp: z.string().optional(),
       lengthSeconds: z.number().optional(),
       promoType: z.string().optional(),
@@ -848,7 +854,6 @@ const shillsRouter = router({
       await updateShill(shillId, data);
       return { success: true };
     }),
-
   delete: protectedProcedure
     .input(z.object({ shillId: z.string() }))
     .mutation(async ({ input }) => {

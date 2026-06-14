@@ -1,0 +1,1 @@
+ALTER TABLE `shills` ADD `campaign_id` int;

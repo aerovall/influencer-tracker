@@ -382,6 +382,7 @@ export async function getAllShills(filters?: { videoId?: string; brand?: string 
       shillId: shills.shillId,
       videoId: shills.videoId,
       productBrand: shills.productBrand,
+      campaignId: shills.campaignId,
       timestamp: shills.timestamp,
       lengthSeconds: shills.lengthSeconds,
       promoType: shills.promoType,

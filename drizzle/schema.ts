@@ -126,6 +126,7 @@ export const shills = mysqlTable("shills", {
   shillId: varchar("shill_id", { length: 100 }).notNull().unique(),
   videoId: varchar("video_id", { length: 100 }).notNull(),
   productBrand: varchar("product_brand", { length: 255 }).notNull(),
+  campaignId: int("campaign_id"),
   timestamp: varchar("timestamp", { length: 10 }).notNull(),
   lengthSeconds: int("length_seconds").notNull(),
   promoType: text("promo_type").notNull(),
