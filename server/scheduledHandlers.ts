@@ -20,8 +20,8 @@ export async function dailySyncHandler(req: Request, res: Response) {
     // Check if weekly report is due (Monday = day 1)
     const schedules = await getReportSchedules();
     const weeklySchedule = schedules.find((s) => s.frequency === "weekly");
-    const today = new Date();
-    if (weeklySchedule?.isActive && today.getDay() === (weeklySchedule.weeklyDayOfWeek ?? 1)) {
+    const todayDate = new Date();
+    if (weeklySchedule?.isActive && todayDate.getDay() === (weeklySchedule.weeklyDayOfWeek ?? 1)) {
       await generateWeeklyReport();
       console.log("[ScheduledSync] Weekly report generated");
     }

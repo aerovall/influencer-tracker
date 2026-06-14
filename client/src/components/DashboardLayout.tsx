@@ -21,7 +21,11 @@ import {
 } from "@/components/ui/sidebar";
 import { getLoginUrl } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { BarChart3, LayoutDashboard, LogOut, PanelLeft, Settings, Tag, Video, FileText, Bell, Youtube } from "lucide-react";
+import {
+  BarChart3, LayoutDashboard, LogOut, PanelLeft, Settings, Tag, Video,
+  FileText, Bell, Youtube, Users, Megaphone, Link2, Receipt, Mail,
+  TrendingUp, ChevronDown, ChevronRight, Star, Briefcase,
+} from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -36,6 +40,16 @@ const menuItems = [
   { icon: Tag, label: "Sponsorships", path: "/shills" },
   { icon: FileText, label: "Reports", path: "/reports" },
   { icon: Settings, label: "Admin", path: "/admin" },
+];
+
+const agencyMenuItems = [
+  { icon: Users, label: "Clients", path: "/agency/clients" },
+  { icon: Megaphone, label: "Campaigns", path: "/agency/campaigns" },
+  { icon: Star, label: "Talents", path: "/agency/talents" },
+  { icon: Link2, label: "Affiliate", path: "/agency/affiliate" },
+  { icon: Receipt, label: "Invoices", path: "/agency/invoices" },
+  { icon: Mail, label: "Emails", path: "/agency/emails" },
+  { icon: TrendingUp, label: "Results", path: "/agency/results" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -118,8 +132,14 @@ function DashboardLayoutContent({
   const isCollapsed = state === "collapsed";
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
-  const activeMenuItem = menuItems.find(item => item.path === location);
   const isMobile = useIsMobile();
+
+  // Persist agency section open/close state
+  const [agencyOpen, setAgencyOpen] = useState(() => {
+    return location.startsWith("/agency") || localStorage.getItem("agency-section-open") === "true";
+  });
+
+  const activeMenuItem = [...menuItems, ...agencyMenuItems].find(item => item.path === location);
 
   // Poll for unseen new videos every 60 seconds to drive the Channels nav badge
   const { data: unseenData } = trpc.channels.unseenCount.useQuery(undefined, {
@@ -127,6 +147,14 @@ function DashboardLayoutContent({
     staleTime: 30_000,
   });
   const unseenCount = unseenData?.count ?? 0;
+
+  useEffect(() => {
+    localStorage.setItem("agency-section-open", agencyOpen ? "true" : "false");
+  }, [agencyOpen]);
+
+  useEffect(() => {
+    if (location.startsWith("/agency")) setAgencyOpen(true);
+  }, [location]);
 
   useEffect(() => {
     if (isCollapsed) {
@@ -191,7 +219,8 @@ function DashboardLayoutContent({
             </div>
           </SidebarHeader>
 
-          <SidebarContent className="gap-0">
+          <SidebarContent className="gap-0 overflow-y-auto">
+            {/* Main nav */}
             <SidebarMenu className="px-2 py-1">
               {menuItems.map(item => {
                 const isActive = location === item.path;
@@ -215,6 +244,52 @@ function DashboardLayoutContent({
                           {unseenCount > 99 ? "99+" : unseenCount}
                         </span>
                       )}
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+
+            {/* Agency section divider */}
+            {!isCollapsed && (
+              <div className="px-4 py-1">
+                <div className="border-t border-border/50" />
+              </div>
+            )}
+
+            {/* Agency section header */}
+            <SidebarMenu className="px-2 py-1">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  onClick={() => setAgencyOpen(o => !o)}
+                  tooltip="Agency"
+                  className="h-10 transition-all font-medium text-muted-foreground hover:text-foreground"
+                >
+                  <Briefcase className="h-4 w-4" />
+                  <span className="flex-1">Agency</span>
+                  {!isCollapsed && (
+                    agencyOpen
+                      ? <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                      : <ChevronRight className="h-3.5 w-3.5 opacity-60" />
+                  )}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* Agency sub-items */}
+              {(agencyOpen || isCollapsed) && agencyMenuItems.map(item => {
+                const isActive = location === item.path || location.startsWith(item.path + "/");
+                return (
+                  <SidebarMenuItem key={item.path}>
+                    <SidebarMenuButton
+                      isActive={isActive}
+                      onClick={() => setLocation(item.path)}
+                      tooltip={item.label}
+                      className={`h-9 transition-all font-normal ${!isCollapsed ? "pl-6" : ""}`}
+                    >
+                      <item.icon
+                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
+                      />
+                      <span className="flex-1">{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

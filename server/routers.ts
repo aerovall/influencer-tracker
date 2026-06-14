@@ -1392,6 +1392,8 @@ const socialAccountsRouter = router({
 });
 
 // ─── App Router ──────────────────────────────────────────────────────────
+import { clientsRouter, campaignsRouter, deliverablesRouter, affiliateRouter, invoicesRouter, emailsRouter, talentResultsRouter } from "./routers/agency";
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -1412,6 +1414,14 @@ export const appRouter = router({
   export: exportRouter,
   channels: channelsRouter,
   socialAccounts: socialAccountsRouter,
+  // Agency Management
+  clients: clientsRouter,
+  campaigns: campaignsRouter,
+  deliverables: deliverablesRouter,
+  affiliate: affiliateRouter,
+  invoices: invoicesRouter,
+  emails: emailsRouter,
+  talentResults: talentResultsRouter,
 });
 
 export type AppRouter = typeof appRouter;

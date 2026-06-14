@@ -1,0 +1,902 @@
+import { z } from "zod";
+import { router, protectedProcedure } from "../_core/trpc";
+import { getDb } from "../db";
+import {
+  clients, campaigns, campaignDeliverables, affiliateLinks, affiliateSnapshots,
+  invoices, invoiceLineItems, emailTemplates, emailLogs, talentResults,
+  youtubeChannels,
+} from "../../drizzle/schema";
+import { eq, desc, sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function todayStr() {
+  return new Date().toISOString().split("T")[0]!;
+}
+
+async function nextInvoiceNumber(): Promise<string> {
+  const db = await getDb();
+  if (!db) return `INV-${new Date().getFullYear()}-001`;
+  const year = new Date().getFullYear();
+  const rows = await db
+    .select({ num: invoices.invoiceNumber })
+    .from(invoices)
+    .where(sql`invoice_number LIKE ${`INV-${year}-%`}`)
+    .orderBy(desc(invoices.id))
+    .limit(1);
+  if (rows.length === 0) return `INV-${year}-001`;
+  const last = rows[0]!.num;
+  const seq = parseInt(last.split("-")[2] ?? "0", 10) + 1;
+  return `INV-${year}-${String(seq).padStart(3, "0")}`;
+}
+
+// ─── Clients Router ───────────────────────────────────────────────────────────
+
+export const clientsRouter = router({
+  list: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(clients).orderBy(desc(clients.createdAt));
+  }),
+
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    const rows = await db.select().from(clients).where(eq(clients.id, input.id)).limit(1);
+    if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+    return rows[0];
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      companyName: z.string().min(1),
+      contactName: z.string().optional(),
+      contactEmail: z.string().email().optional().or(z.literal("")),
+      billingAddress: z.string().optional(),
+      currency: z.string().default("USD"),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [result] = await db.insert(clients).values({
+        companyName: input.companyName,
+        contactName: input.contactName ?? null,
+        contactEmail: input.contactEmail || null,
+        billingAddress: input.billingAddress ?? null,
+        currency: input.currency,
+        notes: input.notes ?? null,
+      });
+      return { id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      companyName: z.string().min(1).optional(),
+      contactName: z.string().optional(),
+      contactEmail: z.string().email().optional().or(z.literal("")),
+      billingAddress: z.string().optional(),
+      currency: z.string().optional(),
+      notes: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { id, ...rest } = input;
+      await db.update(clients).set({
+        ...(rest.companyName !== undefined && { companyName: rest.companyName }),
+        ...(rest.contactName !== undefined && { contactName: rest.contactName }),
+        ...(rest.contactEmail !== undefined && { contactEmail: rest.contactEmail || null }),
+        ...(rest.billingAddress !== undefined && { billingAddress: rest.billingAddress }),
+        ...(rest.currency !== undefined && { currency: rest.currency }),
+        ...(rest.notes !== undefined && { notes: rest.notes }),
+        ...(rest.isActive !== undefined && { isActive: rest.isActive }),
+      }).where(eq(clients.id, id));
+      return { ok: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.delete(clients).where(eq(clients.id, input.id));
+      return { ok: true };
+    }),
+});
+
+// ─── Campaigns Router ─────────────────────────────────────────────────────────
+
+export const campaignsRouter = router({
+  list: protectedProcedure
+    .input(z.object({ clientId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db
+        .select({
+          campaign: campaigns,
+          client: { companyName: clients.companyName, contactEmail: clients.contactEmail },
+        })
+        .from(campaigns)
+        .leftJoin(clients, eq(campaigns.clientId, clients.id))
+        .where(input?.clientId ? eq(campaigns.clientId, input.clientId) : undefined)
+        .orderBy(desc(campaigns.createdAt));
+      return rows;
+    }),
+
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    const rows = await db
+      .select({
+        campaign: campaigns,
+        client: { id: clients.id, companyName: clients.companyName, contactEmail: clients.contactEmail, currency: clients.currency },
+      })
+      .from(campaigns)
+      .leftJoin(clients, eq(campaigns.clientId, clients.id))
+      .where(eq(campaigns.id, input.id))
+      .limit(1);
+    if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+    return rows[0];
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      clientId: z.number(),
+      name: z.string().min(1),
+      objective: z.string().optional(),
+      budget: z.string().default("0"),
+      currency: z.string().default("USD"),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      status: z.enum(["draft", "active", "paused", "completed", "cancelled"]).default("draft"),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [result] = await db.insert(campaigns).values({
+        clientId: input.clientId,
+        name: input.name,
+        objective: input.objective ?? null,
+        budget: input.budget,
+        currency: input.currency,
+        startDate: input.startDate ?? null,
+        endDate: input.endDate ?? null,
+        status: input.status,
+        notes: input.notes ?? null,
+      });
+      return { id: (result as any).insertId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).optional(),
+      objective: z.string().optional(),
+      budget: z.string().optional(),
+      currency: z.string().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      status: z.enum(["draft", "active", "paused", "completed", "cancelled"]).optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { id, ...rest } = input;
+      await db.update(campaigns).set({
+        ...(rest.name !== undefined && { name: rest.name }),
+        ...(rest.objective !== undefined && { objective: rest.objective }),
+        ...(rest.budget !== undefined && { budget: rest.budget }),
+        ...(rest.currency !== undefined && { currency: rest.currency }),
+        ...(rest.startDate !== undefined && { startDate: rest.startDate }),
+        ...(rest.endDate !== undefined && { endDate: rest.endDate }),
+        ...(rest.status !== undefined && { status: rest.status }),
+        ...(rest.notes !== undefined && { notes: rest.notes }),
+      }).where(eq(campaigns.id, id));
+      return { ok: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.delete(campaigns).where(eq(campaigns.id, input.id));
+      return { ok: true };
+    }),
+});
+
+// ─── Deliverables Router ──────────────────────────────────────────────────────
+
+export const deliverablesRouter = router({
+  listByCampaign: protectedProcedure
+    .input(z.object({ campaignId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db
+        .select()
+        .from(campaignDeliverables)
+        .where(eq(campaignDeliverables.campaignId, input.campaignId))
+        .orderBy(campaignDeliverables.createdAt);
+    }),
+
+  create: protectedProcedure
+    .input(z.object({
+      campaignId: z.number(),
+      channelId: z.string().optional(),
+      talentName: z.string().min(1),
+      contentType: z.enum(["dedicated_video", "integration", "short", "story", "post", "other"]).default("dedicated_video"),
+      dueDate: z.string().optional(),
+      status: z.enum(["brief_sent", "script_review", "filming", "editing", "review", "published", "cancelled"]).default("brief_sent"),
+      agreedFee: z.string().default("0"),
+      currency: z.string().default("USD"),
+      videoId: z.string().optional(),
+      briefNotes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [result] = await db.insert(campaignDeliverables).values({
+        campaignId: input.campaignId,
+        channelId: input.channelId ?? null,
+        talentName: input.talentName,
+        contentType: input.contentType,
+        dueDate: input.dueDate ?? null,
+        status: input.status,
+        agreedFee: input.agreedFee,
+        currency: input.currency,
+        videoId: input.videoId ?? null,
+        briefNotes: input.briefNotes ?? null,
+      });
+      return { id: (result as any).insertId };
+    }),
+
+  updateStatus: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      status: z.enum(["brief_sent", "script_review", "filming", "editing", "review", "published", "cancelled"]),
+      videoId: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(campaignDeliverables).set({
+        status: input.status,
+        ...(input.videoId !== undefined && { videoId: input.videoId }),
+      }).where(eq(campaignDeliverables.id, input.id));
+      return { ok: true };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      talentName: z.string().optional(),
+      contentType: z.enum(["dedicated_video", "integration", "short", "story", "post", "other"]).optional(),
+      dueDate: z.string().optional(),
+      status: z.enum(["brief_sent", "script_review", "filming", "editing", "review", "published", "cancelled"]).optional(),
+      agreedFee: z.string().optional(),
+      currency: z.string().optional(),
+      videoId: z.string().optional(),
+      briefNotes: z.string().optional(),
+      channelId: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { id, ...rest } = input;
+      await db.update(campaignDeliverables).set({
+        ...(rest.talentName !== undefined && { talentName: rest.talentName }),
+        ...(rest.contentType !== undefined && { contentType: rest.contentType }),
+        ...(rest.dueDate !== undefined && { dueDate: rest.dueDate }),
+        ...(rest.status !== undefined && { status: rest.status }),
+        ...(rest.agreedFee !== undefined && { agreedFee: rest.agreedFee }),
+        ...(rest.currency !== undefined && { currency: rest.currency }),
+        ...(rest.videoId !== undefined && { videoId: rest.videoId }),
+        ...(rest.briefNotes !== undefined && { briefNotes: rest.briefNotes }),
+        ...(rest.channelId !== undefined && { channelId: rest.channelId }),
+      }).where(eq(campaignDeliverables.id, id));
+      return { ok: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.delete(campaignDeliverables).where(eq(campaignDeliverables.id, input.id));
+      return { ok: true };
+    }),
+});
+
+// ─── Affiliate Router ─────────────────────────────────────────────────────────
+
+export const affiliateRouter = router({
+  listLinks: protectedProcedure
+    .input(z.object({ campaignId: z.number().optional() }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db
+        .select()
+        .from(affiliateLinks)
+        .where(input?.campaignId ? eq(affiliateLinks.campaignId, input.campaignId) : undefined)
+        .orderBy(desc(affiliateLinks.createdAt));
+    }),
+
+  createLink: protectedProcedure
+    .input(z.object({
+      campaignId: z.number().optional(),
+      channelId: z.string().optional(),
+      talentName: z.string().min(1),
+      url: z.string().url(),
+      shortCode: z.string().optional(),
+      commissionType: z.enum(["flat", "cpc", "cpa", "revenue_share"]).default("flat"),
+      commissionRate: z.string().default("0"),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [result] = await db.insert(affiliateLinks).values({
+        campaignId: input.campaignId ?? null,
+        channelId: input.channelId ?? null,
+        talentName: input.talentName,
+        url: input.url,
+        shortCode: input.shortCode ?? null,
+        commissionType: input.commissionType,
+        commissionRate: input.commissionRate,
+        notes: input.notes ?? null,
+      });
+      return { id: (result as any).insertId };
+    }),
+
+  updateLink: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      url: z.string().url().optional(),
+      commissionType: z.enum(["flat", "cpc", "cpa", "revenue_share"]).optional(),
+      commissionRate: z.string().optional(),
+      notes: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { id, ...rest } = input;
+      await db.update(affiliateLinks).set({
+        ...(rest.url !== undefined && { url: rest.url }),
+        ...(rest.commissionType !== undefined && { commissionType: rest.commissionType }),
+        ...(rest.commissionRate !== undefined && { commissionRate: rest.commissionRate }),
+        ...(rest.notes !== undefined && { notes: rest.notes }),
+        ...(rest.isActive !== undefined && { isActive: rest.isActive }),
+      }).where(eq(affiliateLinks.id, id));
+      return { ok: true };
+    }),
+
+  addSnapshot: protectedProcedure
+    .input(z.object({
+      linkId: z.number(),
+      snapshotDate: z.string().optional(),
+      clicks: z.number().default(0),
+      conversions: z.number().default(0),
+      revenueGenerated: z.string().default("0"),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.insert(affiliateSnapshots).values({
+        linkId: input.linkId,
+        snapshotDate: input.snapshotDate ?? todayStr(),
+        clicks: input.clicks,
+        conversions: input.conversions,
+        revenueGenerated: input.revenueGenerated,
+        notes: input.notes ?? null,
+      });
+      return { ok: true };
+    }),
+
+  getSnapshots: protectedProcedure
+    .input(z.object({ linkId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db
+        .select()
+        .from(affiliateSnapshots)
+        .where(eq(affiliateSnapshots.linkId, input.linkId))
+        .orderBy(desc(affiliateSnapshots.snapshotDate));
+    }),
+
+  // Talent stats aggregation — total views, campaigns, affiliate revenue per channel
+  talentStats: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const channels = await db.select().from(youtubeChannels).where(eq(youtubeChannels.isActive, true));
+
+    const stats = await Promise.all(channels.map(async (ch) => {
+      // Total views: sum of latest view_count per video for this channel
+      const viewRows = await db.execute(sql`
+        SELECT COALESCE(SUM(vc.view_count), 0) AS total
+        FROM (
+          SELECT video_id, MAX(date) AS max_date FROM view_counts GROUP BY video_id
+        ) AS latest
+        INNER JOIN view_counts vc ON vc.video_id = latest.video_id AND vc.date = latest.max_date
+        INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${ch.channelId}
+      `);
+      const totalViews = Number((viewRows as any)[0]?.[0]?.total ?? 0);
+
+      // Campaign count
+      const campRows = await db.execute(sql`
+        SELECT COUNT(DISTINCT campaign_id) AS cnt
+        FROM campaign_deliverables
+        WHERE channel_id = ${ch.channelId}
+      `);
+      const campaignCount = Number((campRows as any)[0]?.[0]?.cnt ?? 0);
+
+      // Affiliate revenue
+      const affRows = await db.execute(sql`
+        SELECT COALESCE(SUM(afs.revenue_generated), 0) AS rev
+        FROM affiliate_links al
+        LEFT JOIN affiliate_snapshots afs ON afs.link_id = al.id
+        WHERE al.channel_id = ${ch.channelId}
+      `);
+      const affiliateRevenue = Number((affRows as any)[0]?.[0]?.rev ?? 0);
+
+      return {
+        channelId: ch.channelId,
+        channelName: ch.channelName,
+        thumbnailUrl: ch.thumbnailUrl,
+        subscriberCount: ch.subscriberCount,
+        totalViews,
+        campaignCount,
+        affiliateRevenue,
+      };
+    }));
+
+    return stats;
+  }),
+});
+
+// ─── Invoices Router ──────────────────────────────────────────────────────────
+
+export const invoicesRouter = router({
+  list: protectedProcedure
+    .input(z.object({ clientId: z.number().optional(), status: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const rows = await db
+        .select({
+          invoice: invoices,
+          client: { companyName: clients.companyName },
+        })
+        .from(invoices)
+        .leftJoin(clients, eq(invoices.clientId, clients.id))
+        .where(input?.clientId ? eq(invoices.clientId, input.clientId) : undefined)
+        .orderBy(desc(invoices.createdAt));
+      return rows;
+    }),
+
+  get: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+    const rows = await db
+      .select({
+        invoice: invoices,
+        client: { id: clients.id, companyName: clients.companyName, contactEmail: clients.contactEmail, billingAddress: clients.billingAddress },
+      })
+      .from(invoices)
+      .leftJoin(clients, eq(invoices.clientId, clients.id))
+      .where(eq(invoices.id, input.id))
+      .limit(1);
+    if (!rows[0]) throw new TRPCError({ code: "NOT_FOUND" });
+
+    const lineItems = await db
+      .select()
+      .from(invoiceLineItems)
+      .where(eq(invoiceLineItems.invoiceId, input.id))
+      .orderBy(invoiceLineItems.sortOrder);
+
+    return { ...rows[0], lineItems };
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      clientId: z.number(),
+      campaignId: z.number().optional(),
+      currency: z.string().default("USD"),
+      issuedDate: z.string().optional(),
+      dueDate: z.string().optional(),
+      taxRate: z.string().default("0"),
+      notes: z.string().optional(),
+      lineItems: z.array(z.object({
+        description: z.string().min(1),
+        quantity: z.string().default("1"),
+        unitPrice: z.string().default("0"),
+      })).default([]),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const invoiceNumber = await nextInvoiceNumber();
+      const subtotal = input.lineItems.reduce(
+        (sum: number, li: { description: string; quantity: string; unitPrice: string }) =>
+          sum + parseFloat(li.quantity) * parseFloat(li.unitPrice),
+        0
+      );
+      const taxAmount = subtotal * parseFloat(input.taxRate) / 100;
+      const total = subtotal + taxAmount;
+
+      const [result] = await db.insert(invoices).values({
+        invoiceNumber,
+        clientId: input.clientId,
+        campaignId: input.campaignId ?? null,
+        currency: input.currency,
+        issuedDate: input.issuedDate ?? todayStr(),
+        dueDate: input.dueDate ?? null,
+        taxRate: input.taxRate,
+        subtotal: subtotal.toFixed(2),
+        taxAmount: taxAmount.toFixed(2),
+        total: total.toFixed(2),
+        notes: input.notes ?? null,
+      });
+      const invoiceId = (result as any).insertId;
+
+      if (input.lineItems.length > 0) {
+        await db.insert(invoiceLineItems).values(
+          input.lineItems.map((li: { description: string; quantity: string; unitPrice: string }, i: number) => ({
+            invoiceId,
+            description: li.description,
+            quantity: li.quantity,
+            unitPrice: li.unitPrice,
+            total: (parseFloat(li.quantity) * parseFloat(li.unitPrice)).toFixed(2),
+            sortOrder: i,
+          }))
+        );
+      }
+
+      return { id: invoiceId, invoiceNumber };
+    }),
+
+  updateStatus: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      status: z.enum(["draft", "sent", "paid", "overdue", "cancelled"]),
+      paidDate: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(invoices).set({
+        status: input.status,
+        ...(input.paidDate && { paidDate: input.paidDate }),
+      }).where(eq(invoices.id, input.id));
+      return { ok: true };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      notes: z.string().optional(),
+      dueDate: z.string().optional(),
+      issuedDate: z.string().optional(),
+      taxRate: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { id, ...rest } = input;
+      await db.update(invoices).set({
+        ...(rest.notes !== undefined && { notes: rest.notes }),
+        ...(rest.dueDate !== undefined && { dueDate: rest.dueDate }),
+        ...(rest.issuedDate !== undefined && { issuedDate: rest.issuedDate }),
+        ...(rest.taxRate !== undefined && { taxRate: rest.taxRate }),
+      }).where(eq(invoices.id, id));
+      return { ok: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.delete(invoiceLineItems).where(eq(invoiceLineItems.invoiceId, input.id));
+      await db.delete(invoices).where(eq(invoices.id, input.id));
+      return { ok: true };
+    }),
+
+  generateFromCampaign: protectedProcedure
+    .input(z.object({ campaignId: z.number(), clientId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const deliverables = await db
+        .select()
+        .from(campaignDeliverables)
+        .where(eq(campaignDeliverables.campaignId, input.campaignId));
+
+      const lineItemsInput = deliverables.map((d) => ({
+        description: `${d.contentType.replace(/_/g, " ")} — ${d.talentName}`,
+        quantity: "1",
+        unitPrice: d.agreedFee ?? "0",
+      }));
+
+      const invoiceNumber = await nextInvoiceNumber();
+      const subtotal = lineItemsInput.reduce(
+        (sum: number, li: { description: string; quantity: string; unitPrice: string }) =>
+          sum + parseFloat(li.quantity) * parseFloat(li.unitPrice),
+        0
+      );
+
+      const [result] = await db.insert(invoices).values({
+        invoiceNumber,
+        clientId: input.clientId,
+        campaignId: input.campaignId,
+        currency: "USD",
+        issuedDate: todayStr(),
+        subtotal: subtotal.toFixed(2),
+        taxAmount: "0",
+        total: subtotal.toFixed(2),
+      });
+      const invoiceId = (result as any).insertId;
+
+      if (lineItemsInput.length > 0) {
+        await db.insert(invoiceLineItems).values(
+          lineItemsInput.map((li: { description: string; quantity: string; unitPrice: string }, i: number) => ({
+            invoiceId,
+            description: li.description,
+            quantity: li.quantity,
+            unitPrice: li.unitPrice,
+            total: (parseFloat(li.quantity) * parseFloat(li.unitPrice)).toFixed(2),
+            sortOrder: i,
+          }))
+        );
+      }
+
+      return { id: invoiceId, invoiceNumber };
+    }),
+});
+
+// ─── Emails Router ────────────────────────────────────────────────────────────
+
+export const emailsRouter = router({
+  listTemplates: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(emailTemplates).orderBy(desc(emailTemplates.createdAt));
+  }),
+
+  createTemplate: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      type: z.enum(["brief", "invoice", "follow_up", "results", "general"]).default("general"),
+      subject: z.string().min(1),
+      bodyHtml: z.string().min(1),
+      variablesUsed: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const [result] = await db.insert(emailTemplates).values({
+        name: input.name,
+        type: input.type,
+        subject: input.subject,
+        bodyHtml: input.bodyHtml,
+        variablesUsed: input.variablesUsed ?? null,
+      });
+      return { id: (result as any).insertId };
+    }),
+
+  updateTemplate: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      subject: z.string().optional(),
+      bodyHtml: z.string().optional(),
+      variablesUsed: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { id, ...rest } = input;
+      await db.update(emailTemplates).set({
+        ...(rest.name !== undefined && { name: rest.name }),
+        ...(rest.subject !== undefined && { subject: rest.subject }),
+        ...(rest.bodyHtml !== undefined && { bodyHtml: rest.bodyHtml }),
+        ...(rest.variablesUsed !== undefined && { variablesUsed: rest.variablesUsed }),
+        ...(rest.isActive !== undefined && { isActive: rest.isActive }),
+      }).where(eq(emailTemplates.id, id));
+      return { ok: true };
+    }),
+
+  deleteTemplate: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.delete(emailTemplates).where(eq(emailTemplates.id, input.id));
+      return { ok: true };
+    }),
+
+  listLogs: protectedProcedure
+    .input(z.object({ limit: z.number().default(50) }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      return db
+        .select()
+        .from(emailLogs)
+        .orderBy(desc(emailLogs.createdAt))
+        .limit(input?.limit ?? 50);
+    }),
+
+  sendEmail: protectedProcedure
+    .input(z.object({
+      templateId: z.number().optional(),
+      recipientEmail: z.string().email(),
+      recipientName: z.string().optional(),
+      recipientType: z.enum(["client", "talent", "internal"]).default("client"),
+      subject: z.string().min(1),
+      bodyHtml: z.string().min(1),
+      relatedType: z.string().optional(),
+      relatedId: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const resendKey = process.env.RESEND_API_KEY;
+      let status: "sent" | "failed" | "queued" = "queued";
+      let errorMessage: string | null = null;
+
+      if (resendKey) {
+        try {
+          const res = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${resendKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              from: "Agency <noreply@resend.dev>",
+              to: [input.recipientEmail],
+              subject: input.subject,
+              html: input.bodyHtml,
+            }),
+          });
+          status = res.ok ? "sent" : "failed";
+          if (!res.ok) errorMessage = await res.text();
+        } catch (e) {
+          status = "failed";
+          errorMessage = String(e);
+        }
+      }
+
+      await db.insert(emailLogs).values({
+        templateId: input.templateId ?? null,
+        recipientEmail: input.recipientEmail,
+        recipientName: input.recipientName ?? null,
+        recipientType: input.recipientType,
+        subject: input.subject,
+        bodyHtml: input.bodyHtml,
+        status,
+        errorMessage,
+        sentAt: status === "sent" ? new Date() : null,
+        relatedType: input.relatedType ?? null,
+        relatedId: input.relatedId ?? null,
+      });
+
+      return { ok: true, status };
+    }),
+});
+
+// ─── Talent Results Router ────────────────────────────────────────────────────
+
+export const talentResultsRouter = router({
+  getByDeliverable: protectedProcedure
+    .input(z.object({ deliverableId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const rows = await db
+        .select()
+        .from(talentResults)
+        .where(eq(talentResults.deliverableId, input.deliverableId))
+        .limit(1);
+      return rows[0] ?? null;
+    }),
+
+  upsert: protectedProcedure
+    .input(z.object({
+      deliverableId: z.number(),
+      reportingWindowDays: z.number().default(30),
+      views: z.number().default(0),
+      likes: z.number().default(0),
+      comments: z.number().default(0),
+      shares: z.number().default(0),
+      reach: z.number().default(0),
+      impressions: z.number().default(0),
+      engagementRate: z.string().default("0"),
+      linkClicks: z.number().default(0),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const existing = await db
+        .select({ id: talentResults.id, lockedAt: talentResults.lockedAt })
+        .from(talentResults)
+        .where(eq(talentResults.deliverableId, input.deliverableId))
+        .limit(1);
+
+      if (existing[0]?.lockedAt) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Results are locked and cannot be edited." });
+      }
+
+      if (existing[0]) {
+        await db.update(talentResults).set({
+          reportingWindowDays: input.reportingWindowDays,
+          views: input.views,
+          likes: input.likes,
+          comments: input.comments,
+          shares: input.shares,
+          reach: input.reach,
+          impressions: input.impressions,
+          engagementRate: input.engagementRate,
+          linkClicks: input.linkClicks,
+          notes: input.notes ?? null,
+        }).where(eq(talentResults.deliverableId, input.deliverableId));
+      } else {
+        await db.insert(talentResults).values({
+          deliverableId: input.deliverableId,
+          reportingWindowDays: input.reportingWindowDays,
+          views: input.views,
+          likes: input.likes,
+          comments: input.comments,
+          shares: input.shares,
+          reach: input.reach,
+          impressions: input.impressions,
+          engagementRate: input.engagementRate,
+          linkClicks: input.linkClicks,
+          notes: input.notes ?? null,
+        });
+      }
+      return { ok: true };
+    }),
+
+  lock: protectedProcedure
+    .input(z.object({ deliverableId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      await db.update(talentResults).set({ lockedAt: new Date() })
+        .where(eq(talentResults.deliverableId, input.deliverableId));
+      return { ok: true };
+    }),
+
+  listAll: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db
+      .select({
+        result: talentResults,
+        deliverable: {
+          id: campaignDeliverables.id,
+          talentName: campaignDeliverables.talentName,
+          contentType: campaignDeliverables.contentType,
+          campaignId: campaignDeliverables.campaignId,
+        },
+      })
+      .from(talentResults)
+      .leftJoin(campaignDeliverables, eq(talentResults.deliverableId, campaignDeliverables.id))
+      .orderBy(desc(talentResults.createdAt));
+  }),
+});

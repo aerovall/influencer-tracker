@@ -12,6 +12,14 @@ import Shills from "./pages/Shills";
 import Reports from "./pages/Reports";
 import AdminPanel from "./pages/AdminPanel";
 import Channels from "./pages/Channels";
+import ClientsPage from "./pages/agency/Clients";
+import CampaignsPage from "./pages/agency/Campaigns";
+import CampaignDetailPage from "./pages/agency/CampaignDetail";
+import TalentsPage from "./pages/agency/Talents";
+import AffiliatePage from "./pages/agency/Affiliate";
+import InvoicesPage from "./pages/agency/Invoices";
+import EmailsPage from "./pages/agency/Emails";
+import ResultsPage from "./pages/agency/Results";
 
 function Router() {
   return (
@@ -24,6 +32,14 @@ function Router() {
         <Route path="/reports" component={Reports} />
         <Route path="/channels" component={Channels} />
         <Route path="/admin" component={AdminPanel} />
+        <Route path="/agency/clients" component={ClientsPage} />
+        <Route path="/agency/campaigns/:id" component={CampaignDetailPage} />
+        <Route path="/agency/campaigns" component={CampaignsPage} />
+        <Route path="/agency/talents" component={TalentsPage} />
+        <Route path="/agency/affiliate" component={AffiliatePage} />
+        <Route path="/agency/invoices" component={InvoicesPage} />
+        <Route path="/agency/emails" component={EmailsPage} />
+        <Route path="/agency/results" component={ResultsPage} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

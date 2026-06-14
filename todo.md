@@ -415,3 +415,69 @@
 - [x] Add skipped counter to BulkScrapeJob and ChannelScrapeJob types
 - [x] Add skipped count to job result status responses (channelScrapeStatus, bulkScrapeStatus)
 - [x] Add "skipped" result status to job results array so UI can show why a video was not re-scraped
+
+## Agency Management Module — Full Build (Talents terminology)
+
+### Phase 1: Database Schema
+- [ ] Add `clients` table (company_name, contact_name, contact_email, billing_address, currency, notes)
+- [ ] Add `campaigns` table (client_id, name, objective, budget, start_date, end_date, status, notes)
+- [ ] Add `campaign_deliverables` table (campaign_id, channel_id, talent_name, content_type, due_date, status, agreed_fee, video_id nullable, brief_notes)
+- [ ] Add `affiliate_links` table (campaign_id, channel_id, url, commission_type, commission_rate, notes)
+- [ ] Add `affiliate_snapshots` table (link_id, snapshot_date, clicks, conversions, revenue_generated)
+- [ ] Add `invoices` table (client_id, campaign_id nullable, invoice_number, status, subtotal, tax_rate, tax_amount, total, issued_date, due_date, paid_date, notes)
+- [ ] Add `invoice_line_items` table (invoice_id, description, quantity, unit_price, total)
+- [ ] Add `email_templates` table (name, type, subject, body_html, variables_used)
+- [ ] Add `email_logs` table (template_id nullable, recipient_email, recipient_type, subject, status, sent_at, related_type, related_id)
+- [ ] Add `talent_results` table (deliverable_id, reporting_window_days, views, likes, comments, shares, reach, impressions, engagement_rate, link_clicks, locked_at, notes)
+- [ ] Run migration SQL via webdev_execute_sql
+
+### Phase 2: Backend — Clients, Campaigns, Deliverables
+- [ ] Add `server/routers/agency.ts` with clients CRUD procedures
+- [ ] Add campaigns CRUD procedures to agency router
+- [ ] Add deliverables CRUD + status update procedures
+- [ ] Register agency router in main routers.ts
+
+### Phase 3: Frontend — Clients, Campaigns, Campaign Detail
+- [ ] Add "Agency" section to DashboardLayout sidebar
+- [ ] Build `/agency/clients` page — card/table list with CRUD modals
+- [ ] Build `/agency/campaigns` page — filterable table with status badges
+- [ ] Build `/agency/campaigns/:id` detail page — deliverable pipeline (7 stages), brief, fee tracking
+- [ ] Register all routes in App.tsx
+
+### Phase 4: Backend — Affiliate Marketing + Talent Stats
+- [ ] Add affiliate links CRUD + snapshot entry procedures to agency router
+- [ ] Add talent stats aggregation procedure (views, engagement, campaigns, affiliate revenue per channel)
+- [ ] Add talent directory list procedure
+
+### Phase 5: Frontend — Affiliate + Talent Stats
+- [ ] Build `/agency/affiliate` page — per-talent link table, snapshot entry, commission calculator
+- [ ] Build `/agency/talents` directory page — card grid with stats badges
+- [ ] Build `/agency/talents/:channelId` profile page — metrics cards, views chart, campaign history, affiliate table
+
+### Phase 6: Backend — Invoices + Emails
+- [ ] Add invoice CRUD + auto-generate-from-campaign procedure (auto-number INV-YYYY-NNN)
+- [ ] Add invoice line items CRUD
+- [ ] Add email templates CRUD + send email procedure (Resend if key available, else log-only)
+- [ ] Add email log query procedures
+
+### Phase 7: Frontend — Invoices + Emails
+- [ ] Build `/agency/invoices` page — table with status badges (Draft/Sent/Paid/Overdue), filter by client
+- [ ] Build invoice detail/edit page with line items and PDF download button
+- [ ] Build `/agency/emails` page — template editor + email log table with status badges
+
+### Phase 8: Backend — Talent Results + Video Metrics
+- [ ] Add talent results CRUD + lock procedure
+- [ ] Add talent comparison query (side-by-side metrics across deliverables)
+- [ ] Add video performance score computed field (views, engagement, velocity blend 0-100)
+- [ ] Add video campaign attribution procedure (link video to deliverable)
+
+### Phase 9: Frontend — Talent Results + Video Metrics
+- [ ] Build `/agency/results` page — results entry form (pre-filled from tracked video), lock button
+- [ ] Build campaign summary report page (aggregate reach, export)
+- [ ] Build talent comparison view (side-by-side bar chart)
+- [ ] Enhance existing video list with Performance Score column, velocity badge, campaign attribution column
+
+### Phase 10: Tests + Checkpoint
+- [ ] Write vitest tests for all agency router procedures (clients, campaigns, deliverables, affiliate, invoices, talent results)
+- [ ] Run full test suite — all tests pass
+- [ ] Save checkpoint

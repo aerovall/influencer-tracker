@@ -326,3 +326,203 @@ export const videoCommentSnapshots = mysqlTable("video_comment_snapshots", {
 
 export type VideoCommentSnapshot = typeof videoCommentSnapshots.$inferSelect;
 export type InsertVideoCommentSnapshot = typeof videoCommentSnapshots.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AGENCY MANAGEMENT MODULE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Clients ──────────────────────────────────────────────────────────────────
+export const clients = mysqlTable("clients", {
+  id: int("id").autoincrement().primaryKey(),
+  companyName: varchar("company_name", { length: 255 }).notNull(),
+  contactName: varchar("contact_name", { length: 255 }),
+  contactEmail: varchar("contact_email", { length: 320 }),
+  billingAddress: text("billing_address"),
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Client = typeof clients.$inferSelect;
+export type InsertClient = typeof clients.$inferInsert;
+
+// ─── Campaigns ────────────────────────────────────────────────────────────────
+export const campaigns = mysqlTable("campaigns", {
+  id: int("id").autoincrement().primaryKey(),
+  clientId: int("client_id").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  objective: text("objective"),
+  budget: decimal("budget", { precision: 12, scale: 2 }).default("0"),
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  startDate: varchar("start_date", { length: 10 }),
+  endDate: varchar("end_date", { length: 10 }),
+  status: mysqlEnum("status", ["draft", "active", "paused", "completed", "cancelled"]).default("draft").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Campaign = typeof campaigns.$inferSelect;
+export type InsertCampaign = typeof campaigns.$inferInsert;
+
+// ─── Campaign Deliverables ────────────────────────────────────────────────────
+// A deliverable = one piece of content a Talent must produce for a campaign
+export const campaignDeliverables = mysqlTable("campaign_deliverables", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaign_id").notNull(),
+  channelId: varchar("channel_id", { length: 100 }),   // FK to youtube_channels.channel_id (nullable)
+  talentName: varchar("talent_name", { length: 255 }).notNull(),
+  contentType: mysqlEnum("content_type", ["dedicated_video", "integration", "short", "story", "post", "other"]).default("dedicated_video").notNull(),
+  dueDate: varchar("due_date", { length: 10 }),
+  status: mysqlEnum("status", [
+    "brief_sent",
+    "script_review",
+    "filming",
+    "editing",
+    "review",
+    "published",
+    "cancelled",
+  ]).default("brief_sent").notNull(),
+  agreedFee: decimal("agreed_fee", { precision: 12, scale: 2 }).default("0"),
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  videoId: varchar("video_id", { length: 100 }),        // FK to videos.video_id once published
+  briefNotes: text("brief_notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CampaignDeliverable = typeof campaignDeliverables.$inferSelect;
+export type InsertCampaignDeliverable = typeof campaignDeliverables.$inferInsert;
+
+// ─── Affiliate Links ──────────────────────────────────────────────────────────
+export const affiliateLinks = mysqlTable("affiliate_links", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaign_id"),                       // nullable — link can exist outside a campaign
+  channelId: varchar("channel_id", { length: 100 }),
+  talentName: varchar("talent_name", { length: 255 }).notNull(),
+  url: text("url").notNull(),
+  shortCode: varchar("short_code", { length: 100 }),
+  commissionType: mysqlEnum("commission_type", ["flat", "cpc", "cpa", "revenue_share"]).default("flat").notNull(),
+  commissionRate: decimal("commission_rate", { precision: 10, scale: 4 }).default("0"),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AffiliateLink = typeof affiliateLinks.$inferSelect;
+export type InsertAffiliateLink = typeof affiliateLinks.$inferInsert;
+
+// ─── Affiliate Snapshots (append-only daily performance) ─────────────────────
+export const affiliateSnapshots = mysqlTable("affiliate_snapshots", {
+  id: int("id").autoincrement().primaryKey(),
+  linkId: int("link_id").notNull(),
+  snapshotDate: varchar("snapshot_date", { length: 10 }).notNull(),
+  clicks: bigint("clicks", { mode: "number" }).default(0),
+  conversions: bigint("conversions", { mode: "number" }).default(0),
+  revenueGenerated: decimal("revenue_generated", { precision: 12, scale: 2 }).default("0"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AffiliateSnapshot = typeof affiliateSnapshots.$inferSelect;
+export type InsertAffiliateSnapshot = typeof affiliateSnapshots.$inferInsert;
+
+// ─── Invoices ─────────────────────────────────────────────────────────────────
+export const invoices = mysqlTable("invoices", {
+  id: int("id").autoincrement().primaryKey(),
+  invoiceNumber: varchar("invoice_number", { length: 50 }).notNull().unique(), // e.g. INV-2026-001
+  clientId: int("client_id").notNull(),
+  campaignId: int("campaign_id"),                       // nullable
+  status: mysqlEnum("status", ["draft", "sent", "paid", "overdue", "cancelled"]).default("draft").notNull(),
+  subtotal: decimal("subtotal", { precision: 12, scale: 2 }).default("0").notNull(),
+  taxRate: decimal("tax_rate", { precision: 6, scale: 4 }).default("0"),
+  taxAmount: decimal("tax_amount", { precision: 12, scale: 2 }).default("0"),
+  total: decimal("total", { precision: 12, scale: 2 }).default("0").notNull(),
+  currency: varchar("currency", { length: 10 }).default("USD").notNull(),
+  issuedDate: varchar("issued_date", { length: 10 }),
+  dueDate: varchar("due_date", { length: 10 }),
+  paidDate: varchar("paid_date", { length: 10 }),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = typeof invoices.$inferInsert;
+
+// ─── Invoice Line Items ───────────────────────────────────────────────────────
+export const invoiceLineItems = mysqlTable("invoice_line_items", {
+  id: int("id").autoincrement().primaryKey(),
+  invoiceId: int("invoice_id").notNull(),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).default("1").notNull(),
+  unitPrice: decimal("unit_price", { precision: 12, scale: 2 }).default("0").notNull(),
+  total: decimal("total", { precision: 12, scale: 2 }).default("0").notNull(),
+  sortOrder: int("sort_order").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type InvoiceLineItem = typeof invoiceLineItems.$inferSelect;
+export type InsertInvoiceLineItem = typeof invoiceLineItems.$inferInsert;
+
+// ─── Email Templates ──────────────────────────────────────────────────────────
+export const emailTemplates = mysqlTable("email_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  type: mysqlEnum("type", ["brief", "invoice", "follow_up", "results", "general"]).default("general").notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  bodyHtml: text("body_html").notNull(),
+  variablesUsed: text("variables_used"),               // JSON array of variable names
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+export type InsertEmailTemplate = typeof emailTemplates.$inferInsert;
+
+// ─── Email Logs ───────────────────────────────────────────────────────────────
+export const emailLogs = mysqlTable("email_logs", {
+  id: int("id").autoincrement().primaryKey(),
+  templateId: int("template_id"),                      // nullable — can send without template
+  recipientEmail: varchar("recipient_email", { length: 320 }).notNull(),
+  recipientName: varchar("recipient_name", { length: 255 }),
+  recipientType: mysqlEnum("recipient_type", ["client", "talent", "internal"]).default("client").notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  bodyHtml: text("body_html"),
+  status: mysqlEnum("status", ["queued", "sent", "failed", "bounced"]).default("queued").notNull(),
+  errorMessage: text("error_message"),
+  sentAt: timestamp("sent_at"),
+  relatedType: varchar("related_type", { length: 50 }),  // "campaign" | "invoice" | "deliverable"
+  relatedId: int("related_id"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type EmailLog = typeof emailLogs.$inferSelect;
+export type InsertEmailLog = typeof emailLogs.$inferInsert;
+
+// ─── Talent Results ───────────────────────────────────────────────────────────
+// Locked post-campaign performance snapshot per deliverable
+export const talentResults = mysqlTable("talent_results", {
+  id: int("id").autoincrement().primaryKey(),
+  deliverableId: int("deliverable_id").notNull().unique(), // one result per deliverable
+  reportingWindowDays: int("reporting_window_days").default(30),
+  views: bigint("views", { mode: "number" }).default(0),
+  likes: bigint("likes", { mode: "number" }).default(0),
+  comments: bigint("comments", { mode: "number" }).default(0),
+  shares: bigint("shares", { mode: "number" }).default(0),
+  reach: bigint("reach", { mode: "number" }).default(0),
+  impressions: bigint("impressions", { mode: "number" }).default(0),
+  engagementRate: decimal("engagement_rate", { precision: 8, scale: 4 }).default("0"),
+  linkClicks: bigint("link_clicks", { mode: "number" }).default(0),
+  lockedAt: timestamp("locked_at"),                    // null = draft, non-null = locked/final
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TalentResult = typeof talentResults.$inferSelect;
+export type InsertTalentResult = typeof talentResults.$inferInsert;
