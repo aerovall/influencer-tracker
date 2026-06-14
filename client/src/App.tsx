@@ -21,6 +21,7 @@ import AffiliatePage from "./pages/agency/Affiliate";
 import InvoicesPage from "./pages/agency/Invoices";
 import EmailsPage from "./pages/agency/Emails";
 import ResultsPage from "./pages/agency/Results";
+import TalentProfilePage from "./pages/agency/TalentProfile";
 
 function Router() {
   return (
@@ -37,6 +38,7 @@ function Router() {
         <Route path="/agency/clients" component={ClientsPage} />
         <Route path="/agency/campaigns/:id" component={CampaignDetailPage} />
         <Route path="/agency/campaigns" component={CampaignsPage} />
+        <Route path="/agency/talents/:channelId" component={TalentProfilePage} />
         <Route path="/agency/talents" component={TalentsPage} />
         <Route path="/agency/affiliate" component={AffiliatePage} />
         <Route path="/agency/invoices" component={InvoicesPage} />

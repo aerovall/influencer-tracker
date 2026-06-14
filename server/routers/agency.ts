@@ -415,6 +415,113 @@ export const affiliateRouter = router({
         .orderBy(desc(affiliateSnapshots.snapshotDate));
     }),
 
+  // Full talent profile — channel info, view trend, top videos, campaign history, affiliate links, results
+  talentProfile: protectedProcedure
+    .input(z.object({ channelId: z.string() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR" });
+      const { channelId } = input;
+
+      const [channel] = await db
+        .select()
+        .from(youtubeChannels)
+        .where(eq(youtubeChannels.channelId, channelId))
+        .limit(1);
+      if (!channel) throw new TRPCError({ code: "NOT_FOUND" });
+
+      const viewTrendRaw = await db.execute(sql`
+        SELECT vc.date, COALESCE(SUM(vc.view_count), 0) AS total_views
+        FROM view_counts vc
+        INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${channelId}
+        WHERE vc.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+        GROUP BY vc.date
+        ORDER BY vc.date ASC
+      `);
+      const viewTrend = ((viewTrendRaw as any)[0] ?? viewTrendRaw) as Array<{ date: string; total_views: number }>;
+
+      const topVideosRaw = await db.execute(sql`
+        SELECT v.video_id, v.title, v.published_at, v.duration_seconds, v.thumbnail_url,
+               vc.view_count, vc.likes, vc.comments
+        FROM (
+          SELECT video_id, MAX(date) AS max_date FROM view_counts GROUP BY video_id
+        ) AS latest
+        INNER JOIN view_counts vc ON vc.video_id = latest.video_id AND vc.date = latest.max_date
+        INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${channelId}
+        ORDER BY vc.view_count DESC
+        LIMIT 10
+      `);
+      const topVideos = ((topVideosRaw as any)[0] ?? topVideosRaw) as Array<any>;
+
+      const deliverablesRaw = await db.execute(sql`
+        SELECT cd.id, cd.talent_name, cd.content_type, cd.due_date, cd.status, cd.agreed_fee,
+               cd.brief_notes, cd.video_id,
+               c.id AS campaign_id, c.name AS campaign_name, c.status AS campaign_status,
+               cl.company_name AS client_name
+        FROM campaign_deliverables cd
+        INNER JOIN campaigns c ON c.id = cd.campaign_id
+        LEFT JOIN clients cl ON cl.id = c.client_id
+        WHERE cd.channel_id = ${channelId}
+        ORDER BY cd.created_at DESC
+      `);
+      const deliverables = ((deliverablesRaw as any)[0] ?? deliverablesRaw) as Array<any>;
+
+      const affLinksRaw = await db.execute(sql`
+        SELECT al.id, al.url, al.commission_type, al.commission_rate, al.is_active, al.notes,
+               c.name AS campaign_name,
+               COALESCE(SUM(afs.clicks), 0) AS total_clicks,
+               COALESCE(SUM(afs.conversions), 0) AS total_conversions,
+               COALESCE(SUM(afs.revenue_generated), 0) AS total_revenue
+        FROM affiliate_links al
+        LEFT JOIN campaigns c ON c.id = al.campaign_id
+        LEFT JOIN affiliate_snapshots afs ON afs.link_id = al.id
+        WHERE al.channel_id = ${channelId}
+        GROUP BY al.id, al.url, al.commission_type, al.commission_rate, al.is_active, al.notes, c.name
+        ORDER BY al.created_at DESC
+      `);
+      const affLinks = ((affLinksRaw as any)[0] ?? affLinksRaw) as Array<any>;
+
+      const resultsRaw = await db.execute(sql`
+        SELECT tr.*, cd.content_type, cd.due_date, c.name AS campaign_name
+        FROM talent_results tr
+        INNER JOIN campaign_deliverables cd ON cd.id = tr.deliverable_id
+        INNER JOIN campaigns c ON c.id = cd.campaign_id
+        WHERE cd.channel_id = ${channelId}
+        ORDER BY tr.created_at DESC
+      `);
+      const results = ((resultsRaw as any)[0] ?? resultsRaw) as Array<any>;
+
+      const totalViewsRaw = await db.execute(sql`
+        SELECT COALESCE(SUM(vc.view_count), 0) AS total
+        FROM (
+          SELECT video_id, MAX(date) AS max_date FROM view_counts GROUP BY video_id
+        ) AS latest
+        INNER JOIN view_counts vc ON vc.video_id = latest.video_id AND vc.date = latest.max_date
+        INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${channelId}
+      `);
+      const totalViews = Number((totalViewsRaw as any)[0]?.[0]?.total ?? 0);
+
+      const totalRevenueRaw = await db.execute(sql`
+        SELECT COALESCE(SUM(afs.revenue_generated), 0) AS rev
+        FROM affiliate_links al
+        LEFT JOIN affiliate_snapshots afs ON afs.link_id = al.id
+        WHERE al.channel_id = ${channelId}
+      `);
+      const totalAffiliateRevenue = Number((totalRevenueRaw as any)[0]?.[0]?.rev ?? 0);
+
+      return {
+        channel,
+        totalViews,
+        totalAffiliateRevenue,
+        campaignCount: deliverables.length,
+        viewTrend,
+        topVideos,
+        deliverables,
+        affiliateLinks: affLinks,
+        results,
+      };
+    }),
+
   // Talent stats aggregation — total views, campaigns, affiliate revenue per channel
   talentStats: protectedProcedure.query(async () => {
     const db = await getDb();

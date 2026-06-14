@@ -1,7 +1,9 @@
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
 import { useState } from "react";
-import { Users, Youtube, TrendingUp, Video } from "lucide-react";
+import { Users, Youtube, TrendingUp, Video, ArrowRight } from "lucide-react";
+import { useLocation } from "wouter";
+import { Button } from "@/components/ui/button";
 
 function fmtNum(n: number | null | undefined) {
   if (!n) return "0";
@@ -55,6 +57,7 @@ export default function TalentsPage() {
 }
 
 function TalentCard({ channel }: { channel: any }) {
+  const [, setLocation] = useLocation();
   return (
     <div className="rounded-xl border bg-card p-5 space-y-4 hover:border-primary/30 transition-colors">
       <div className="flex items-center gap-3">
@@ -91,6 +94,14 @@ function TalentCard({ channel }: { channel: any }) {
           Last sync: {new Date(channel.lastSyncAt).toLocaleDateString()}
         </p>
       )}
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full gap-1.5"
+        onClick={() => setLocation(`/agency/talents/${channel.channelId}`)}
+      >
+        View Profile <ArrowRight className="h-3.5 w-3.5" />
+      </Button>
     </div>
   );
 }
