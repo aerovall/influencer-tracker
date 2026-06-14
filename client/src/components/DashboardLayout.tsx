@@ -35,7 +35,6 @@ import { Button } from "./ui/button";
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
   { icon: Youtube, label: "Channels", path: "/channels" },
-  { icon: Video, label: "Videos", path: "/videos" },
   { icon: BarChart3, label: "Analytics", path: "/analytics" },
   { icon: Tag, label: "Sponsorships", path: "/shills" },
   { icon: FileText, label: "Reports", path: "/reports" },

@@ -1,0 +1,9 @@
+{
+  "query": "SELECT al.id, al.talent_name, al.channel_id, al.short_code, al.url,\n       yc.channel_id AS matched_channel_id, yc.channel_name AS matched_channel_name\nFROM affiliate_links al\nLEFT JOIN youtube_channels yc ON LOWER(TRIM(yc.channel_name)) = LOWER(TRIM(al.talent_name))\nWHERE al.channel_id IS NULL\nORDER BY al.id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute SELECT al.id, al.talent_name, al.channel_id, al.short_code, al.url,\n       yc.channel_id AS matched_channel_id, yc.channel_name AS matched_channel_name\nFROM affiliate_links al\nLEFT JOIN youtube_channels yc ON LOWER(TRIM(yc.channel_name)) = LOWER(TRIM(al.talent_name))\nWHERE al.channel_id IS NULL\nORDER BY al.id;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1802
+}

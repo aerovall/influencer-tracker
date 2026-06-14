@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE affiliate_links SET channel_id = 'UCJQY1CkwtFNfJfIzROc8KiA' WHERE id = 1 AND talent_name = 'Conor kenny';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 41Bsy7mDMZRekBh.ed6611080f89 --database 3Edmhvk67nUbyz8ALJbZgq --execute UPDATE affiliate_links SET channel_id = 'UCJQY1CkwtFNfJfIzROc8KiA' WHERE id = 1 AND talent_name = 'Conor kenny';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 1863
+}

@@ -1,10 +1,10 @@
-import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import {
   ArrowLeft, Users, TrendingUp, DollarSign, Briefcase,
   Video, Link2, BarChart3, ExternalLink, Clock, Eye,
-  ThumbsUp, MessageSquare, CheckCircle2, AlertCircle, Star, Plus, MousePointerClick, Pencil, Image,
+  ThumbsUp, CheckCircle2, AlertCircle, Plus, MousePointerClick,
+  Pencil, Image, Trash2, Loader2, Film,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import {
   Filler, Tooltip, Legend,
 } from "chart.js";
 import { Line } from "react-chartjs-2";
+import { useLocation, useParams } from "wouter";
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
@@ -77,11 +78,24 @@ const CAMPAIGN_STATUS_COLORS: Record<string, string> = {
   draft:     "bg-muted text-muted-foreground",
 };
 
+const TABS = [
+  { id: "overview",   label: "Overview",   icon: <TrendingUp className="h-3.5 w-3.5" /> },
+  { id: "videos",     label: "Videos",     icon: <Film className="h-3.5 w-3.5" /> },
+  { id: "campaigns",  label: "Campaigns",  icon: <Briefcase className="h-3.5 w-3.5" /> },
+  { id: "affiliate",  label: "Affiliate",  icon: <Link2 className="h-3.5 w-3.5" /> },
+  { id: "results",    label: "Results",    icon: <BarChart3 className="h-3.5 w-3.5" /> },
+] as const;
+
+type TabId = typeof TABS[number]["id"];
+
+const PLATFORMS = ["YouTube", "Instagram", "TikTok"] as const;
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function TalentProfile() {
   const { channelId } = useParams<{ channelId: string }>();
   const [, setLocation] = useLocation();
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
 
   // ── All hooks must be called unconditionally before any early returns ──
   const { data, isLoading, error } = trpc.affiliate.talentProfile.useQuery(
@@ -91,6 +105,46 @@ export default function TalentProfile() {
 
   const utils = trpc.useUtils();
   const { data: campaigns = [] } = trpc.campaigns.list.useQuery();
+
+  // Videos tab state
+  const [videoSearch, setVideoSearch] = useState("");
+  const [ytFetching, setYtFetching] = useState(false);
+  const [ytFetched, setYtFetched] = useState(false);
+  const [addVideoOpen, setAddVideoOpen] = useState(false);
+  const [addVideoForm, setAddVideoForm] = useState({
+    videoUrl: "",
+    title: "",
+    publishedDate: new Date().toISOString().split("T")[0],
+    thumbnailUrl: "",
+    durationSeconds: undefined as number | undefined,
+  });
+  const fetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { data: channelVideos = [], isLoading: videosLoading } = trpc.videos.list.useQuery(
+    { channelId: channelId ?? undefined },
+    { enabled: !!channelId }
+  );
+
+  const createVideo = trpc.videos.create.useMutation({
+    onSuccess: () => {
+      utils.videos.list.invalidate({ channelId: channelId ?? undefined });
+      setAddVideoOpen(false);
+      setAddVideoForm({ videoUrl: "", title: "", publishedDate: new Date().toISOString().split("T")[0], thumbnailUrl: "", durationSeconds: undefined });
+      setYtFetched(false);
+      toast.success("Video added");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteVideo = trpc.videos.delete.useMutation({
+    onSuccess: () => {
+      utils.videos.list.invalidate({ channelId: channelId ?? undefined });
+      toast.success("Video removed");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Assign to campaign state
   const [assignOpen, setAssignOpen] = useState(false);
   const [assignForm, setAssignForm] = useState({
     campaignId: "",
@@ -111,7 +165,7 @@ export default function TalentProfile() {
     onError: (e) => toast.error(e.message),
   });
 
-  // ── Edit deliverable state ──
+  // Edit deliverable state
   const [editDelivOpen, setEditDelivOpen] = useState(false);
   const [editDelivForm, setEditDelivForm] = useState<{
     id: number; status: string; agreedFee: string; currency: string;
@@ -155,6 +209,51 @@ export default function TalentProfile() {
       screenshotUrl: editDelivForm.screenshotUrl || undefined,
     });
   }
+
+  function handleAssignSubmit() {
+    const cid = parseInt(assignForm.campaignId);
+    if (!cid) return toast.error("Please select a campaign");
+    createDeliverable.mutate({
+      campaignId: cid,
+      talentName: data?.channel?.channelName ?? data?.channel?.channelId ?? "",
+      channelId: data?.channel?.channelId || undefined,
+      contentType: assignForm.contentType as any,
+      dueDate: assignForm.dueDate || undefined,
+      agreedFee: assignForm.agreedFee || "0",
+      currency: assignForm.currency,
+      briefNotes: assignForm.briefNotes || undefined,
+    });
+  }
+
+  // Auto-fetch YouTube metadata when URL is pasted
+  const handleVideoUrlChange = (url: string) => {
+    setAddVideoForm(f => ({ ...f, videoUrl: url }));
+    setYtFetched(false);
+    if (fetchTimeoutRef.current) clearTimeout(fetchTimeoutRef.current);
+    fetchTimeoutRef.current = setTimeout(async () => {
+      const ytPattern = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/))[a-zA-Z0-9_-]{11}/;
+      if (!ytPattern.test(url)) return;
+      setYtFetching(true);
+      try {
+        const result = await utils.videos.fetchYouTubeInfo.fetch({ url });
+        if (result) {
+          setAddVideoForm(f => ({
+            ...f,
+            title: result.data.title || f.title,
+            publishedDate: result.data.publishedDate || f.publishedDate,
+            thumbnailUrl: result.data.thumbnailUrl || f.thumbnailUrl,
+            durationSeconds: result.data.durationSeconds,
+          }));
+          setYtFetched(true);
+          toast.success("YouTube metadata fetched automatically");
+        }
+      } catch {
+        // silently fail
+      } finally {
+        setYtFetching(false);
+      }
+    }, 600);
+  };
 
   const chartData = useMemo(() => {
     if (!data?.viewTrend?.length) return null;
@@ -209,26 +308,16 @@ export default function TalentProfile() {
 
   const { channel, totalViews, totalAffiliateRevenue, topVideos, deliverables, affiliateLinks, results } = data;
 
-  function handleAssignSubmit() {
-    const cid = parseInt(assignForm.campaignId);
-    if (!cid) return toast.error("Please select a campaign");
-    createDeliverable.mutate({
-      campaignId: cid,
-      talentName: channel.channelName ?? channel.channelId,
-      channelId: channel.channelId || undefined,
-      contentType: assignForm.contentType as any,
-      dueDate: assignForm.dueDate || undefined,
-      agreedFee: assignForm.agreedFee || "0",
-      currency: assignForm.currency,
-      briefNotes: assignForm.briefNotes || undefined,
-    });
-  }
-
   // ── Total affiliate clicks ──
   const totalAffiliateClicks = affiliateLinks.reduce((sum: number, l: any) => sum + Number(l.total_clicks ?? 0), 0);
 
+  // ── Filtered videos for Videos tab ──
+  const filteredVideos = (channelVideos as any[]).filter((v: any) =>
+    videoSearch === "" || (v.title ?? "").toLowerCase().includes(videoSearch.toLowerCase())
+  );
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8">
+    <div className="max-w-6xl mx-auto space-y-6">
       {/* ── Back ── */}
       <Button variant="ghost" size="sm" className="gap-1.5 -ml-2 text-muted-foreground hover:text-foreground" onClick={() => setLocation("/agency/talents")}>
         <ArrowLeft className="h-4 w-4" /> All Talents
@@ -277,231 +366,344 @@ export default function TalentProfile() {
         <KpiCard icon={<DollarSign className="h-5 w-5 text-emerald-500" />} label="Affiliate Revenue" value={fmtCurrency(totalAffiliateRevenue)} accent="emerald" />
       </div>
 
-      {/* ── View Trend Chart ── */}
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold flex items-center gap-2">
-          <TrendingUp className="h-4 w-4 text-amber-500" /> View Trend — Last 30 Days
-        </h2>
-        <div className="rounded-xl border bg-card p-4">
-          {chartData ? (
-            <div style={{ height: 220 }}>
-              <Line data={chartData} options={chartOptions as any} />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              No view data available for the last 30 days
-            </div>
-          )}
+      {/* ── Tabs ── */}
+      <div>
+        {/* Tab bar */}
+        <div className="flex items-center gap-1 border-b border-border/50 pb-0 mb-6 overflow-x-auto">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 transition-colors whitespace-nowrap
+                ${activeTab === tab.id
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                }`}
+            >
+              {tab.icon}
+              {tab.label}
+              {tab.id === "videos" && (channelVideos as any[]).length > 0 && (
+                <span className="ml-1 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 font-normal">
+                  {(channelVideos as any[]).length}
+                </span>
+              )}
+              {tab.id === "campaigns" && deliverables.length > 0 && (
+                <span className="ml-1 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 font-normal">
+                  {deliverables.length}
+                </span>
+              )}
+              {tab.id === "affiliate" && affiliateLinks.length > 0 && (
+                <span className="ml-1 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 font-normal">
+                  {affiliateLinks.length}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
-      </section>
 
-      {/* ── Main Grid: Top Videos + Campaign History ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* Top Videos */}
-        <section className="space-y-3">
-          <h2 className="text-base font-semibold flex items-center gap-2">
-            <Video className="h-4 w-4 text-blue-500" /> Top Videos
-          </h2>
-          {topVideos.length === 0 ? (
-            <EmptyState icon={<Video className="h-7 w-7" />} message="No videos tracked yet" />
-          ) : (
-            <div className="space-y-2">
-              {topVideos.map((v: any, i: number) => (
-                <div key={v.videoId ?? v.video_id ?? i} className="flex items-center gap-3 rounded-xl border bg-card px-3 py-2.5">
-                  <span className="text-xs font-bold text-muted-foreground/50 w-5 shrink-0 text-center">{i + 1}</span>
-                  {(v.thumbnailUrl ?? v.thumbnail_url) ? (
-                    <img src={v.thumbnailUrl ?? v.thumbnail_url} alt={v.title} className="h-10 w-16 rounded object-cover shrink-0" />
-                  ) : (
-                    <div className="h-10 w-16 rounded bg-muted shrink-0 flex items-center justify-center">
-                      <Video className="h-4 w-4 text-muted-foreground/40" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate leading-tight">{v.title ?? "Untitled"}</p>
-                    <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-0.5"><Eye className="h-3 w-3" />{fmtNum(v.viewCount ?? v.view_count)}</span>
-                      {(v.likes ?? 0) > 0 && <span className="flex items-center gap-0.5"><ThumbsUp className="h-3 w-3" />{fmtNum(v.likes)}</span>}
-                      {(v.durationSeconds ?? v.duration_seconds ?? 0) > 0 && <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" />{fmtDuration(v.durationSeconds ?? v.duration_seconds)}</span>}
-                    </div>
+        {/* ── OVERVIEW TAB ── */}
+        {activeTab === "overview" && (
+          <div className="space-y-6">
+            {/* View Trend Chart */}
+            <section className="space-y-3">
+              <h2 className="text-base font-semibold flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-amber-500" /> View Trend — Last 30 Days
+              </h2>
+              <div className="rounded-xl border bg-card p-4">
+                {chartData ? (
+                  <div style={{ height: 220 }}>
+                    <Line data={chartData} options={chartOptions as any} />
                   </div>
-                  <a
-                    href={`https://youtube.com/watch?v=${v.videoId ?? v.video_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+                ) : (
+                  <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+                    No view data available for the last 30 days
+                  </div>
+                )}
+              </div>
+            </section>
 
-        {/* Campaign History */}
-        <section className="space-y-3">
-          <h2 className="text-base font-semibold flex items-center gap-2">
-            <Briefcase className="h-4 w-4 text-violet-500" /> Campaign History
-          </h2>
-          {deliverables.length === 0 ? (
-            <EmptyState icon={<Briefcase className="h-7 w-7" />} message="No campaigns assigned yet" />
-          ) : (
-            <div className="space-y-2">
-              {deliverables.map((d: any) => {
-                const isEditable = d.campaign_status !== "completed" && d.campaign_status !== "cancelled" && d.status !== "cancelled";
-                return (
-                  <div key={d.id} className="rounded-xl border bg-card px-4 py-3 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${CAMPAIGN_STATUS_COLORS[d.campaign_status] ?? "bg-muted text-muted-foreground"}`}>
-                            {d.campaign_status}
-                          </span>
-                          <p className="text-sm font-medium truncate">{d.campaign_name}</p>
+            {/* Top Videos */}
+            <section className="space-y-3">
+              <h2 className="text-base font-semibold flex items-center gap-2">
+                <Video className="h-4 w-4 text-blue-500" /> Top Videos
+              </h2>
+              {topVideos.length === 0 ? (
+                <EmptyState icon={<Video className="h-7 w-7" />} message="No videos tracked yet" />
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                  {topVideos.map((v: any, i: number) => (
+                    <div key={v.videoId ?? v.video_id ?? i} className="flex items-center gap-3 rounded-xl border bg-card px-3 py-2.5">
+                      <span className="text-xs font-bold text-muted-foreground/50 w-5 shrink-0 text-center">{i + 1}</span>
+                      {(v.thumbnailUrl ?? v.thumbnail_url) ? (
+                        <img src={v.thumbnailUrl ?? v.thumbnail_url} alt={v.title} className="h-10 w-16 rounded object-cover shrink-0" />
+                      ) : (
+                        <div className="h-10 w-16 rounded bg-muted shrink-0 flex items-center justify-center">
+                          <Video className="h-4 w-4 text-muted-foreground/40" />
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{d.client_name ?? "No client"} · {d.contentType?.replace(/_/g, " ") ?? d.content_type?.replace(/_/g, " ")}</p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${DELIVERABLE_STATUS_COLORS[d.status] ?? "bg-muted text-muted-foreground"}`}>
-                          {d.status?.replace(/_/g, " ")}
-                        </span>
-                        {isEditable && (
-                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => openEditDeliverable(d)}>
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
-                      {(d.agreedFee ?? d.agreed_fee) && parseFloat(d.agreedFee ?? d.agreed_fee) > 0 && (
-                        <span className="flex items-center gap-1 text-emerald-500 font-medium">
-                          <DollarSign className="h-3 w-3" /> {parseFloat(d.agreedFee ?? d.agreed_fee).toLocaleString()} {d.currency}
-                        </span>
                       )}
-                      {(d.dueDate ?? d.due_date) && <span>Due {d.dueDate ?? d.due_date}</span>}
-                      {(d.videoId ?? d.video_id) && (
-                        <a href={`https://youtube.com/watch?v=${d.videoId ?? d.video_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-500 hover:underline">
-                          <Video className="h-3 w-3" /> Video
-                        </a>
-                      )}
-                    </div>
-                    {/* Screenshot preview */}
-                    {(d.screenshotUrl) && (
-                      <div className="mt-1">
-                        <a href={d.screenshotUrl} target="_blank" rel="noopener noreferrer">
-                          <img
-                            src={d.screenshotUrl}
-                            alt="Screenshot"
-                            className="rounded-lg border max-h-40 object-cover hover:opacity-90 transition-opacity cursor-pointer"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                          />
-                        </a>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate leading-tight">{v.title ?? "Untitled"}</p>
+                        <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-0.5"><Eye className="h-3 w-3" />{fmtNum(v.viewCount ?? v.view_count)}</span>
+                          {(v.likes ?? 0) > 0 && <span className="flex items-center gap-0.5"><ThumbsUp className="h-3 w-3" />{fmtNum(v.likes)}</span>}
+                          {(v.durationSeconds ?? v.duration_seconds ?? 0) > 0 && <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" />{fmtDuration(v.durationSeconds ?? v.duration_seconds)}</span>}
+                        </div>
                       </div>
-                    )}
-                    {/* Brief notes */}
-                    {(d.briefNotes) && (
-                      <p className="text-xs text-muted-foreground italic border-t pt-2 mt-1">{d.briefNotes}</p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      </div>
-
-      {/* ── Affiliate Links ── */}
-      <section className="space-y-3">
-        <h2 className="text-base font-semibold flex items-center gap-2">
-          <Link2 className="h-4 w-4 text-emerald-500" /> Affiliate Links
-        </h2>
-        {affiliateLinks.length === 0 ? (
-          <EmptyState icon={<Link2 className="h-7 w-7" />} message="No affiliate links yet" />
-        ) : (
-          <div className="rounded-xl border bg-card overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/30">
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">URL</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Campaign</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Clicks</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Conv.</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Revenue</th>
-                  <th className="text-center px-4 py-3 font-medium text-muted-foreground">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {affiliateLinks.map((link: any) => (
-                  <tr key={link.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                    <td className="px-4 py-3">
                       <a
-                        href={link.url}
+                        href={`https://youtube.com/watch?v=${v.videoId ?? v.video_id}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-500 hover:underline flex items-center gap-1 max-w-[200px] truncate"
+                        className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
                       >
-                        {link.url} <ExternalLink className="h-3 w-3 shrink-0" />
+                        <ExternalLink className="h-3.5 w-3.5" />
                       </a>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{link.campaign_name ?? "—"}</td>
-                    <td className="px-4 py-3 text-right">{fmtNum(Number(link.total_clicks))}</td>
-                    <td className="px-4 py-3 text-right">{fmtNum(Number(link.total_conversions))}</td>
-                    <td className="px-4 py-3 text-right font-medium text-emerald-500">
-                      {Number(link.total_revenue) > 0 ? fmtCurrency(Number(link.total_revenue)) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium ${link.is_active ? "bg-emerald-500/15 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
-                        {link.is_active ? <CheckCircle2 className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
-                        {link.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         )}
-      </section>
 
-      {/* ── Talent Results ── */}
-      {results.length > 0 && (
-        <section className="space-y-3">
-          <h2 className="text-base font-semibold flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-amber-500" /> Performance Results
-          </h2>
-          <div className="rounded-xl border bg-card overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/30">
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Campaign</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Type</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Views</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Likes</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Comments</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Eng. Rate</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground">Clicks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((r: any) => (
-                  <tr key={r.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
-                    <td className="px-4 py-3 font-medium">{r.campaign_name}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{r.content_type?.replace(/_/g, " ")}</td>
-                    <td className="px-4 py-3 text-right">{fmtNum(r.views)}</td>
-                    <td className="px-4 py-3 text-right">{fmtNum(r.likes)}</td>
-                    <td className="px-4 py-3 text-right">{fmtNum(r.comments)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {r.engagement_rate ? `${parseFloat(r.engagement_rate).toFixed(2)}%` : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right">{fmtNum(r.link_clicks)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* ── VIDEOS TAB ── */}
+        {activeTab === "videos" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <Input
+                placeholder="Search videos..."
+                value={videoSearch}
+                onChange={(e) => setVideoSearch(e.target.value)}
+                className="max-w-xs"
+              />
+              <Button size="sm" className="gap-2" onClick={() => setAddVideoOpen(true)}>
+                <Plus className="h-4 w-4" /> Add Video
+              </Button>
+            </div>
+
+            {videosLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            ) : filteredVideos.length === 0 ? (
+              <EmptyState icon={<Film className="h-7 w-7" />} message={videoSearch ? "No videos match your search" : "No videos tracked yet. Add a video or run a sync from Admin."} />
+            ) : (
+              <div className="rounded-xl border bg-card overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border/50 bg-muted/20">
+                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Title</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Published</th>
+                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">Video ID</th>
+                        <th className="px-4 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredVideos.map((video: any, idx: number) => (
+                        <tr
+                          key={video.videoId}
+                          className={`border-b border-border/30 hover:bg-accent/30 transition-colors ${idx % 2 === 0 ? "" : "bg-muted/10"}`}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2 max-w-sm">
+                              {video.thumbnailUrl && (
+                                <img src={video.thumbnailUrl} alt="" className="h-8 w-14 object-cover rounded shrink-0" />
+                              )}
+                              <a
+                                href={video.videoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium truncate hover:text-primary transition-colors flex items-center gap-1"
+                              >
+                                {video.title}
+                                <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
+                              </a>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{video.publishedDate}</td>
+                          <td className="px-4 py-3">
+                            <code className="text-xs bg-muted/30 px-1.5 py-0.5 rounded font-mono">{video.videoId}</code>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => deleteVideo.mutate({ videoId: video.videoId })}
+                              className="text-muted-foreground hover:text-destructive transition-colors"
+                              title="Remove video"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
-        </section>
-      )}
+        )}
+
+        {/* ── CAMPAIGNS TAB ── */}
+        {activeTab === "campaigns" && (
+          <div className="space-y-3">
+            {deliverables.length === 0 ? (
+              <EmptyState icon={<Briefcase className="h-7 w-7" />} message="No campaigns assigned yet" />
+            ) : (
+              <div className="space-y-2">
+                {deliverables.map((d: any) => {
+                  const isEditable = d.campaign_status !== "completed" && d.campaign_status !== "cancelled" && d.status !== "cancelled";
+                  return (
+                    <div key={d.id} className="rounded-xl border bg-card px-4 py-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${CAMPAIGN_STATUS_COLORS[d.campaign_status] ?? "bg-muted text-muted-foreground"}`}>
+                              {d.campaign_status}
+                            </span>
+                            <p className="text-sm font-medium truncate">{d.campaign_name}</p>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">{d.client_name ?? "No client"} · {d.contentType?.replace(/_/g, " ") ?? d.content_type?.replace(/_/g, " ")}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${DELIVERABLE_STATUS_COLORS[d.status] ?? "bg-muted text-muted-foreground"}`}>
+                            {d.status?.replace(/_/g, " ")}
+                          </span>
+                          {isEditable && (
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => openEditDeliverable(d)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+                        {(d.agreedFee ?? d.agreed_fee) && parseFloat(d.agreedFee ?? d.agreed_fee) > 0 && (
+                          <span className="flex items-center gap-1 text-emerald-500 font-medium">
+                            <DollarSign className="h-3 w-3" /> {parseFloat(d.agreedFee ?? d.agreed_fee).toLocaleString()} {d.currency}
+                          </span>
+                        )}
+                        {(d.dueDate ?? d.due_date) && <span>Due {d.dueDate ?? d.due_date}</span>}
+                        {(d.videoId ?? d.video_id) && (
+                          <a href={`https://youtube.com/watch?v=${d.videoId ?? d.video_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-500 hover:underline">
+                            <Video className="h-3 w-3" /> Video
+                          </a>
+                        )}
+                      </div>
+                      {(d.screenshotUrl) && (
+                        <div className="mt-1">
+                          <a href={d.screenshotUrl} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={d.screenshotUrl}
+                              alt="Screenshot"
+                              className="rounded-lg border max-h-40 object-cover hover:opacity-90 transition-opacity cursor-pointer"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            />
+                          </a>
+                        </div>
+                      )}
+                      {(d.briefNotes) && (
+                        <p className="text-xs text-muted-foreground italic border-t pt-2 mt-1">{d.briefNotes}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── AFFILIATE TAB ── */}
+        {activeTab === "affiliate" && (
+          <div className="space-y-3">
+            {affiliateLinks.length === 0 ? (
+              <EmptyState icon={<Link2 className="h-7 w-7" />} message="No affiliate links yet" />
+            ) : (
+              <div className="rounded-xl border bg-card overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/30">
+                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">URL</th>
+                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Campaign</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Clicks</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Conv.</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Revenue</th>
+                      <th className="text-center px-4 py-3 font-medium text-muted-foreground">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {affiliateLinks.map((link: any) => (
+                      <tr key={link.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3">
+                          <a
+                            href={link.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-500 hover:underline flex items-center gap-1 max-w-[200px] truncate"
+                          >
+                            {link.url} <ExternalLink className="h-3 w-3 shrink-0" />
+                          </a>
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">{link.campaign_name ?? "—"}</td>
+                        <td className="px-4 py-3 text-right">{fmtNum(Number(link.total_clicks))}</td>
+                        <td className="px-4 py-3 text-right">{fmtNum(Number(link.total_conversions))}</td>
+                        <td className="px-4 py-3 text-right font-medium text-emerald-500">
+                          {Number(link.total_revenue) > 0 ? fmtCurrency(Number(link.total_revenue)) : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium ${link.is_active ? "bg-emerald-500/15 text-emerald-500" : "bg-muted text-muted-foreground"}`}>
+                            {link.is_active ? <CheckCircle2 className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                            {link.is_active ? "Active" : "Inactive"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── RESULTS TAB ── */}
+        {activeTab === "results" && (
+          <div className="space-y-3">
+            {results.length === 0 ? (
+              <EmptyState icon={<BarChart3 className="h-7 w-7" />} message="No performance results recorded yet" />
+            ) : (
+              <div className="rounded-xl border bg-card overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/30">
+                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Campaign</th>
+                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Type</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Views</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Likes</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Comments</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Eng. Rate</th>
+                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Clicks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map((r: any) => (
+                      <tr key={r.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                        <td className="px-4 py-3 font-medium">{r.campaign_name}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{r.content_type?.replace(/_/g, " ")}</td>
+                        <td className="px-4 py-3 text-right">{fmtNum(r.views)}</td>
+                        <td className="px-4 py-3 text-right">{fmtNum(r.likes)}</td>
+                        <td className="px-4 py-3 text-right">{fmtNum(r.comments)}</td>
+                        <td className="px-4 py-3 text-right">
+                          {r.engagement_rate ? `${parseFloat(r.engagement_rate).toFixed(2)}%` : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-right">{fmtNum(r.link_clicks)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* ── Assign to Campaign Dialog ── */}
       <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
         <DialogContent className="max-w-md">
@@ -627,6 +829,55 @@ export default function TalentProfile() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Add Video Dialog ── */}
+      <Dialog open={addVideoOpen} onOpenChange={(v) => { setAddVideoOpen(v); if (!v) { setYtFetched(false); setAddVideoForm({ videoUrl: "", title: "", publishedDate: new Date().toISOString().split("T")[0], thumbnailUrl: "", durationSeconds: undefined }); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Video for {channel.channelName}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Video URL</Label>
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  {ytFetching && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {ytFetched && <CheckCircle2 className="h-3 w-3 text-green-500" />}
+                  {ytFetching ? "Fetching metadata..." : ytFetched ? "Auto-filled from YouTube" : "Paste URL to auto-fill"}
+                </span>
+              </div>
+              <Input
+                placeholder="https://youtube.com/watch?v=... or youtu.be/..."
+                value={addVideoForm.videoUrl}
+                onChange={(e) => handleVideoUrlChange(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Title <span className="text-xs text-muted-foreground">(auto-filled for YouTube)</span></Label>
+              <Input placeholder="Video title" value={addVideoForm.title} onChange={(e) => setAddVideoForm(f => ({ ...f, title: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Published Date</Label>
+              <Input type="date" value={addVideoForm.publishedDate} onChange={(e) => setAddVideoForm(f => ({ ...f, publishedDate: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Thumbnail URL <span className="text-xs text-muted-foreground">(auto-filled for YouTube)</span></Label>
+              <Input placeholder="https://..." value={addVideoForm.thumbnailUrl} onChange={(e) => setAddVideoForm(f => ({ ...f, thumbnailUrl: e.target.value }))} />
+            </div>
+            <Button
+              className="w-full"
+              disabled={createVideo.isPending || ytFetching || !addVideoForm.videoUrl || !addVideoForm.title}
+              onClick={() => createVideo.mutate({
+                influencerName: channel.channelName ?? channel.channelId,
+                platform: "YouTube",
+                ...addVideoForm,
+              })}
+            >
+              {createVideo.isPending ? "Adding..." : "Add Video"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -670,11 +921,8 @@ function TalentProfileSkeleton() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}
       </div>
+      <Skeleton className="h-12 rounded-xl" />
       <Skeleton className="h-64 rounded-xl" />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Skeleton className="h-72 rounded-xl" />
-        <Skeleton className="h-72 rounded-xl" />
-      </div>
     </div>
   );
 }
