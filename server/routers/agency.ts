@@ -430,39 +430,83 @@ export const affiliateRouter = router({
         .limit(1);
       if (!channel) throw new TRPCError({ code: "NOT_FOUND" });
 
-      const viewTrendRaw = await db.execute(sql`
-        SELECT vc.date, COALESCE(SUM(vc.view_count), 0) AS total_views
-        FROM view_counts vc
-        INNER JOIN videos v ON v.video_id = vc.video_id
-        WHERE v.channel_id = ${channelId}
-          AND vc.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
-        GROUP BY vc.date
-        ORDER BY vc.date ASC
-      `);
-      const viewTrend = ((viewTrendRaw as any)[0] ?? viewTrendRaw) as Array<{ date: string; total_views: number }>;
+      // Step 1: get all videos for this channel using Drizzle ORM (avoids prepared statement issues)
+      const { videos, viewCounts } = await import("../../drizzle/schema").then(m => ({ videos: m.videos, viewCounts: m.viewCounts }));
+      const { and, gte, inArray } = await import("drizzle-orm").then(m => ({ and: m.and, gte: m.gte, inArray: m.inArray }));
 
-      // Get all videos for this channel with their latest view_count (app-level dedup)
-      const allVideoStatsRaw = await db.execute(sql`
-        SELECT v.video_id, v.title, v.published_at, v.duration_seconds, v.thumbnail_url,
-               vc.view_count, vc.likes, vc.comments, vc.date
-        FROM view_counts vc
-        INNER JOIN videos v ON v.video_id = vc.video_id
-        WHERE v.channel_id = ${channelId}
-        ORDER BY vc.date DESC
-      `);
-      const allVideoStats = ((allVideoStatsRaw as any)[0] ?? allVideoStatsRaw) as Array<any>;
+      const channelVideos = await db
+        .select({ videoId: videos.videoId })
+        .from(videos)
+        .where(eq(videos.channelId, channelId));
+      const videoIds = channelVideos.map(v => v.videoId);
+
+      // Step 2: get all view_count rows for those videos, sorted by date desc
+      let allVideoStats: Array<any> = [];
+      if (videoIds.length > 0) {
+        const vcRows = await db
+          .select({
+            videoId: viewCounts.videoId,
+            viewCount: viewCounts.viewCount,
+            likes: viewCounts.likes,
+            comments: viewCounts.comments,
+            date: viewCounts.date,
+          })
+          .from(viewCounts)
+          .where(inArray(viewCounts.videoId, videoIds))
+          .orderBy(desc(viewCounts.date));
+
+        // Join with video metadata
+        const videoMeta = await db
+          .select({
+            videoId: videos.videoId,
+            title: videos.title,
+            publishedAt: videos.publishedDate,
+            durationSeconds: videos.durationSeconds,
+            thumbnailUrl: videos.thumbnailUrl,
+          })
+          .from(videos)
+          .where(inArray(videos.videoId, videoIds));
+        const metaMap = new Map(videoMeta.map(v => [v.videoId, v]));
+        allVideoStats = vcRows.map(vc => ({ ...vc, ...metaMap.get(vc.videoId) }));
+      }
 
       // Deduplicate: keep only the latest row per video_id
       const seenVideoIds = new Set<string>();
       const latestVideoStats: Array<any> = [];
       for (const row of allVideoStats) {
-        if (!seenVideoIds.has(row.video_id)) {
-          seenVideoIds.add(row.video_id);
+        const vid = row.videoId ?? row.video_id;
+        if (!seenVideoIds.has(vid)) {
+          seenVideoIds.add(vid);
           latestVideoStats.push(row);
         }
       }
-      const totalViews = latestVideoStats.reduce((sum, r) => sum + Number(r.view_count ?? 0), 0);
-      const topVideos = [...latestVideoStats].sort((a, b) => Number(b.view_count ?? 0) - Number(a.view_count ?? 0)).slice(0, 10);
+      const totalViews = latestVideoStats.reduce((sum, r) => sum + Number(r.viewCount ?? r.view_count ?? 0), 0);
+      const topVideos = [...latestVideoStats]
+        .sort((a, b) => Number(b.viewCount ?? b.view_count ?? 0) - Number(a.viewCount ?? a.view_count ?? 0))
+        .slice(0, 10);
+
+      // View trend: last 30 days — group by date
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0]!;
+      const trendRows = videoIds.length > 0
+        ? await db
+            .select({ date: viewCounts.date, viewCount: viewCounts.viewCount, videoId: viewCounts.videoId })
+            .from(viewCounts)
+            .where(and(
+              inArray(viewCounts.videoId, videoIds),
+              gte(viewCounts.date, thirtyDaysAgoStr)
+            ))
+            .orderBy(viewCounts.date)
+        : [];
+      // Aggregate by date
+      const trendMap = new Map<string, number>();
+      for (const r of trendRows) {
+        trendMap.set(r.date, (trendMap.get(r.date) ?? 0) + Number(r.viewCount ?? 0));
+      }
+      const viewTrend = Array.from(trendMap.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([date, total_views]) => ({ date, total_views }));
 
       const deliverablesRaw = await db.execute(sql`
         SELECT cd.id, cd.talent_name, cd.content_type, cd.due_date, cd.status, cd.agreed_fee,
