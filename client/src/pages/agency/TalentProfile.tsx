@@ -1,12 +1,22 @@
 import { useParams, useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ArrowLeft, Users, TrendingUp, DollarSign, Briefcase,
   Video, Link2, BarChart3, ExternalLink, Clock, Eye,
-  ThumbsUp, MessageSquare, CheckCircle2, AlertCircle, Star,
+  ThumbsUp, MessageSquare, CheckCircle2, AlertCircle, Star, Plus, MousePointerClick,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { toast } from "sonner";
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, PointElement, LineElement,
@@ -129,6 +139,47 @@ export default function TalentProfile() {
 
   const { channel, totalViews, totalAffiliateRevenue, topVideos, deliverables, affiliateLinks, results } = data;
 
+  // ── Assign to Campaign dialog ──
+  const utils = trpc.useUtils();
+  const { data: campaigns = [] } = trpc.campaigns.list.useQuery();
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignForm, setAssignForm] = useState({
+    campaignId: "",
+    contentType: "dedicated_video",
+    dueDate: "",
+    agreedFee: "",
+    currency: "USD",
+    briefNotes: "",
+  });
+
+  const createDeliverable = trpc.deliverables.create.useMutation({
+    onSuccess: () => {
+      utils.affiliate.talentProfile.invalidate({ channelId: channelId ?? "" });
+      setAssignOpen(false);
+      setAssignForm({ campaignId: "", contentType: "dedicated_video", dueDate: "", agreedFee: "", currency: "USD", briefNotes: "" });
+      toast.success("Talent assigned to campaign");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  function handleAssignSubmit() {
+    const cid = parseInt(assignForm.campaignId);
+    if (!cid) return toast.error("Please select a campaign");
+    createDeliverable.mutate({
+      campaignId: cid,
+      talentName: channel.channelName ?? channel.channelId,
+      channelId: channel.channelId || undefined,
+      contentType: assignForm.contentType as any,
+      dueDate: assignForm.dueDate || undefined,
+      agreedFee: assignForm.agreedFee || "0",
+      currency: assignForm.currency,
+      briefNotes: assignForm.briefNotes || undefined,
+    });
+  }
+
+  // ── Total affiliate clicks ──
+  const totalAffiliateClicks = affiliateLinks.reduce((sum: number, l: any) => sum + Number(l.total_clicks ?? 0), 0);
+
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       {/* ── Back ── */}
@@ -137,7 +188,7 @@ export default function TalentProfile() {
       </Button>
 
       {/* ── Hero ── */}
-      <div className="flex items-start gap-5">
+      <div className="flex items-start gap-5 flex-wrap">
         {channel.thumbnailUrl ? (
           <img src={channel.thumbnailUrl} alt={channel.channelName} className="h-20 w-20 rounded-full object-cover border-2 border-border shrink-0" />
         ) : (
@@ -160,15 +211,22 @@ export default function TalentProfile() {
           <p className="text-sm text-muted-foreground mt-1">
             {fmtSubs(channel.subscriberCount)} subscribers
           </p>
-
         </div>
+        <Button
+          onClick={() => setAssignOpen(true)}
+          className="gap-2 shrink-0 ml-auto"
+          size="sm"
+        >
+          <Plus className="h-4 w-4" /> Assign to Campaign
+        </Button>
       </div>
 
       {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <KpiCard icon={<Eye className="h-5 w-5 text-amber-500" />} label="Total Views" value={fmtNum(totalViews)} accent="amber" />
         <KpiCard icon={<Users className="h-5 w-5 text-blue-500" />} label="Subscribers" value={fmtSubs(channel.subscriberCount)} accent="blue" />
         <KpiCard icon={<Briefcase className="h-5 w-5 text-violet-500" />} label="Campaigns" value={String(deliverables.length > 0 ? new Set(deliverables.map((d: any) => d.campaign_id)).size : 0)} accent="violet" />
+        <KpiCard icon={<MousePointerClick className="h-5 w-5 text-sky-500" />} label="Affiliate Clicks" value={fmtNum(totalAffiliateClicks)} accent="sky" />
         <KpiCard icon={<DollarSign className="h-5 w-5 text-emerald-500" />} label="Affiliate Revenue" value={fmtCurrency(totalAffiliateRevenue)} accent="emerald" />
       </div>
 
@@ -375,6 +433,67 @@ export default function TalentProfile() {
           </div>
         </section>
       )}
+      {/* ── Assign to Campaign Dialog ── */}
+      <Dialog open={assignOpen} onOpenChange={setAssignOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign to Campaign</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Campaign *</Label>
+              <Select value={assignForm.campaignId} onValueChange={(v) => setAssignForm(f => ({ ...f, campaignId: v }))}>
+                <SelectTrigger><SelectValue placeholder="Select campaign" /></SelectTrigger>
+                <SelectContent>
+                  {(campaigns as any[]).map((row: any) => (
+                    <SelectItem key={row.campaign.id} value={String(row.campaign.id)}>{row.campaign.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Content Type</Label>
+              <Select value={assignForm.contentType} onValueChange={(v) => setAssignForm(f => ({ ...f, contentType: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["dedicated_video","integration","short","story","post","live","other"].map(t => (
+                    <SelectItem key={t} value={t}>{t.replace(/_/g, " ")}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Agreed Fee</Label>
+                <Input type="number" min="0" placeholder="0" value={assignForm.agreedFee} onChange={(e) => setAssignForm(f => ({ ...f, agreedFee: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Currency</Label>
+                <Select value={assignForm.currency} onValueChange={(v) => setAssignForm(f => ({ ...f, currency: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["USD","EUR","GBP","SGD","AUD"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Due Date</Label>
+              <Input type="date" value={assignForm.dueDate} onChange={(e) => setAssignForm(f => ({ ...f, dueDate: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Brief Notes</Label>
+              <Textarea rows={3} placeholder="Campaign brief, talking points..." value={assignForm.briefNotes} onChange={(e) => setAssignForm(f => ({ ...f, briefNotes: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssignOpen(false)}>Cancel</Button>
+            <Button onClick={handleAssignSubmit} disabled={createDeliverable.isPending}>
+              {createDeliverable.isPending ? "Assigning..." : "Assign"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

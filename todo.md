@@ -481,3 +481,9 @@
 - [x] Write vitest tests for all agency router procedures (clients, campaigns, deliverables, affiliate, invoices, talent results)
 - [x] Run full test suite — all tests pass
 - [x] Save checkpoint
+
+## v2.37 — Talent Profile Enhancements + Comparison View
+
+- [x] Add "Assign to Campaign" button on Talent Profile — dialog to pick campaign + fill deliverable details, calls deliverables.create
+- [x] Show total affiliate clicks KPI card on Talent Profile (sum of all affiliate link clicks for this talent)
+- [x] Add talent comparison view on Talents page — "Compare" toggle, select 2-3 talents, side-by-side KPI table
