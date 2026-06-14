@@ -273,6 +273,30 @@ export default function TalentProfile() {
     }, 600);
   };
 
+  // Expandable video row state — MUST be before early returns
+  const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
+  const { data: videoShills = [], refetch: refetchShills } = trpc.shills.listByVideo.useQuery(
+    { videoId: expandedVideoId ?? "" },
+    { enabled: !!expandedVideoId }
+  );
+  const [shillForm, setShillForm] = useState({ productBrand: "", campaignId: "", timestamp: "0:00", lengthSeconds: 30, promoType: "Verbal mention", notes: "" });
+  const createShill = trpc.shills.create.useMutation({
+    onSuccess: () => { refetchShills(); setShillForm({ productBrand: "", campaignId: "", timestamp: "0:00", lengthSeconds: 30, promoType: "Verbal mention", notes: "" }); toast.success("Sponsorship added"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteShill = trpc.shills.delete.useMutation({
+    onSuccess: () => { refetchShills(); toast.success("Sponsorship removed"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateShillMutation = trpc.shills.update.useMutation({
+    onSuccess: () => { refetchShills(); toast.success("Updated"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const updateDeliverableVideoId = trpc.deliverables.update.useMutation({
+    onSuccess: () => { utils.videos.listEnriched.invalidate({ channelId: channelId ?? "" }); toast.success("Campaign linked"); },
+    onError: (e) => toast.error(e.message),
+  });
+
   const chartData = useMemo(() => {
     if (!data?.viewTrend?.length) return null;
     const labels = data.viewTrend.map((d: any) => d.date?.slice(5) ?? "");
@@ -331,31 +355,6 @@ export default function TalentProfile() {
 
   // Search is now server-side via listEnriched; filteredVideos = channelVideos directly
   const filteredVideos = channelVideos as any[];
-
-  // Expandable video row state
-  const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
-  const { data: videoShills = [], refetch: refetchShills } = trpc.shills.listByVideo.useQuery(
-    { videoId: expandedVideoId ?? "" },
-    { enabled: !!expandedVideoId }
-  );
-  const [shillForm, setShillForm] = useState({ productBrand: "", campaignId: "", timestamp: "0:00", lengthSeconds: 30, promoType: "Verbal mention", notes: "" });
-  const createShill = trpc.shills.create.useMutation({
-    onSuccess: () => { refetchShills(); setShillForm({ productBrand: "", campaignId: "", timestamp: "0:00", lengthSeconds: 30, promoType: "Verbal mention", notes: "" }); toast.success("Sponsorship added"); },
-    onError: (e) => toast.error(e.message),
-  });
-  const deleteShill = trpc.shills.delete.useMutation({
-    onSuccess: () => { refetchShills(); toast.success("Sponsorship removed"); },
-    onError: (e) => toast.error(e.message),
-  });
-  const updateShillMutation = trpc.shills.update.useMutation({
-    onSuccess: () => { refetchShills(); toast.success("Updated"); },
-    onError: (e) => toast.error(e.message),
-  });
-  // Campaign link column: update deliverable video_id
-  const updateDeliverableVideoId = trpc.deliverables.update.useMutation({
-    onSuccess: () => { utils.videos.listEnriched.invalidate({ channelId: channelId ?? "" }); toast.success("Campaign linked"); },
-    onError: (e) => toast.error(e.message),
-  });
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
