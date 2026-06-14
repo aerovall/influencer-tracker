@@ -433,27 +433,36 @@ export const affiliateRouter = router({
       const viewTrendRaw = await db.execute(sql`
         SELECT vc.date, COALESCE(SUM(vc.view_count), 0) AS total_views
         FROM view_counts vc
-        INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${channelId}
-        WHERE vc.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+        INNER JOIN videos v ON v.video_id = vc.video_id
+        WHERE v.channel_id = ${channelId}
+          AND vc.date >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
         GROUP BY vc.date
         ORDER BY vc.date ASC
       `);
       const viewTrend = ((viewTrendRaw as any)[0] ?? viewTrendRaw) as Array<{ date: string; total_views: number }>;
 
-      const topVideosRaw = await db.execute(sql`
+      // Get all videos for this channel with their latest view_count (app-level dedup)
+      const allVideoStatsRaw = await db.execute(sql`
         SELECT v.video_id, v.title, v.published_at, v.duration_seconds, v.thumbnail_url,
-               vc.view_count, vc.likes, vc.comments
+               vc.view_count, vc.likes, vc.comments, vc.date
         FROM view_counts vc
-        INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${channelId}
-        INNER JOIN (
-          SELECT video_id, MAX(date) AS max_date
-          FROM view_counts
-          GROUP BY video_id
-        ) latest ON latest.video_id = vc.video_id AND latest.max_date = vc.date
-        ORDER BY vc.view_count DESC
-        LIMIT 10
+        INNER JOIN videos v ON v.video_id = vc.video_id
+        WHERE v.channel_id = ${channelId}
+        ORDER BY vc.date DESC
       `);
-      const topVideos = ((topVideosRaw as any)[0] ?? topVideosRaw) as Array<any>;
+      const allVideoStats = ((allVideoStatsRaw as any)[0] ?? allVideoStatsRaw) as Array<any>;
+
+      // Deduplicate: keep only the latest row per video_id
+      const seenVideoIds = new Set<string>();
+      const latestVideoStats: Array<any> = [];
+      for (const row of allVideoStats) {
+        if (!seenVideoIds.has(row.video_id)) {
+          seenVideoIds.add(row.video_id);
+          latestVideoStats.push(row);
+        }
+      }
+      const totalViews = latestVideoStats.reduce((sum, r) => sum + Number(r.view_count ?? 0), 0);
+      const topVideos = [...latestVideoStats].sort((a, b) => Number(b.view_count ?? 0) - Number(a.view_count ?? 0)).slice(0, 10);
 
       const deliverablesRaw = await db.execute(sql`
         SELECT cd.id, cd.talent_name, cd.content_type, cd.due_date, cd.status, cd.agreed_fee,
@@ -493,17 +502,7 @@ export const affiliateRouter = router({
       `);
       const results = ((resultsRaw as any)[0] ?? resultsRaw) as Array<any>;
 
-      const totalViewsRaw = await db.execute(sql`
-        SELECT COALESCE(SUM(vc.view_count), 0) AS total
-        FROM view_counts vc
-        INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${channelId}
-        INNER JOIN (
-          SELECT video_id, MAX(date) AS max_date
-          FROM view_counts
-          GROUP BY video_id
-        ) latest ON latest.video_id = vc.video_id AND latest.max_date = vc.date
-      `);
-      const totalViews = Number((totalViewsRaw as any)[0]?.[0]?.total ?? 0);
+      // totalViews already computed above from latestVideoStats
 
       const totalRevenueRaw = await db.execute(sql`
         SELECT COALESCE(SUM(afs.revenue_generated), 0) AS rev
@@ -534,17 +533,23 @@ export const affiliateRouter = router({
 
     const stats = await Promise.all(channels.map(async (ch) => {
       // Total views: sum of latest view_count per video for this channel
-      const viewRows = await db.execute(sql`
-        SELECT COALESCE(SUM(vc.view_count), 0) AS total
+      // Total views: fetch all view_counts for channel, deduplicate by latest date in app code
+      const allVcRaw = await db.execute(sql`
+        SELECT vc.video_id, vc.view_count, vc.date
         FROM view_counts vc
-        INNER JOIN videos v ON v.video_id = vc.video_id AND v.channel_id = ${ch.channelId}
-        INNER JOIN (
-          SELECT video_id, MAX(date) AS max_date
-          FROM view_counts
-          GROUP BY video_id
-        ) latest ON latest.video_id = vc.video_id AND latest.max_date = vc.date
+        INNER JOIN videos v ON v.video_id = vc.video_id
+        WHERE v.channel_id = ${ch.channelId}
+        ORDER BY vc.date DESC
       `);
-      const totalViews = Number((viewRows as any)[0]?.[0]?.total ?? 0);
+      const allVcRows = ((allVcRaw as any)[0] ?? allVcRaw) as Array<{ video_id: string; view_count: number; date: string }>;
+      const seenVids = new Set<string>();
+      let totalViews = 0;
+      for (const r of allVcRows) {
+        if (!seenVids.has(r.video_id)) {
+          seenVids.add(r.video_id);
+          totalViews += Number(r.view_count ?? 0);
+        }
+      }
 
       // Campaign count
       const campRows = await db.execute(sql`
