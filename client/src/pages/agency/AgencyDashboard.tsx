@@ -6,6 +6,7 @@ import {
   ChevronRight, AlertCircle, CheckCircle2, Clock, Star,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -375,7 +376,7 @@ function KpiCard({ icon, label, value, sub, accent }: {
         <div className="h-8 w-8 rounded-lg bg-muted/50 flex items-center justify-center">{icon}</div>
       </div>
       <div>
-        <p className="text-2xl font-bold tracking-tight">{value}</p>
+        <p className="text-2xl font-bold tracking-tight"><AnimatedNumber value={value} /></p>
         {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
       </div>
     </div>

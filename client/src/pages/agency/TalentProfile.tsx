@@ -17,6 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, PointElement, LineElement,
@@ -509,7 +510,7 @@ function KpiCard({ icon, label, value, accent }: {
         <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{label}</p>
         <div className="h-8 w-8 rounded-lg bg-muted/50 flex items-center justify-center">{icon}</div>
       </div>
-      <p className="text-2xl font-bold tracking-tight">{value}</p>
+      <p className="text-2xl font-bold tracking-tight"><AnimatedNumber value={value} /></p>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { Activity, AlertTriangle, Eye, TrendingUp, Video, Zap } from "lucide-rea
 import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { ExportExcelDialog } from "@/components/ExportExcelDialog";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 
 // Dynamic color palette for any number of channels
 const PALETTE = [
@@ -38,7 +39,7 @@ function KpiCard({ title, value, sub, icon: Icon, accent }: {
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground font-medium">{title}</p>
             <p className="text-3xl font-bold tracking-tight" style={accent ? { color: accent } : {}}>
-              {value}
+              <AnimatedNumber value={String(value)} />
             </p>
             {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
           </div>
