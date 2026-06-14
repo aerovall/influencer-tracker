@@ -4,9 +4,9 @@ import { getDb } from "../db";
 import {
   clients, campaigns, campaignDeliverables, affiliateLinks, affiliateSnapshots,
   invoices, invoiceLineItems, emailTemplates, emailLogs, talentResults,
-  youtubeChannels,
+  youtubeChannels, videos, viewCounts,
 } from "../../drizzle/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, inArray, and, gte, sum, count, countDistinct } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -431,8 +431,6 @@ export const affiliateRouter = router({
       if (!channel) throw new TRPCError({ code: "NOT_FOUND" });
 
       // Step 1: get all videos for this channel using Drizzle ORM (avoids prepared statement issues)
-      const { videos, viewCounts } = await import("../../drizzle/schema").then(m => ({ videos: m.videos, viewCounts: m.viewCounts }));
-      const { and, gte, inArray } = await import("drizzle-orm").then(m => ({ and: m.and, gte: m.gte, inArray: m.inArray }));
 
       const channelVideos = await db
         .select({ videoId: videos.videoId })
@@ -508,53 +506,84 @@ export const affiliateRouter = router({
         .sort((a, b) => a[0].localeCompare(b[0]))
         .map(([date, total_views]) => ({ date, total_views }));
 
-      const deliverablesRaw = await db.execute(sql`
-        SELECT cd.id, cd.talent_name, cd.content_type, cd.due_date, cd.status, cd.agreed_fee,
-               cd.brief_notes, cd.video_id,
-               c.id AS campaign_id, c.name AS campaign_name, c.status AS campaign_status,
-               cl.company_name AS client_name
-        FROM campaign_deliverables cd
-        INNER JOIN campaigns c ON c.id = cd.campaign_id
-        LEFT JOIN clients cl ON cl.id = c.client_id
-        WHERE cd.channel_id = ${channelId}
-        ORDER BY cd.created_at DESC
-      `);
-      const deliverables = ((deliverablesRaw as any)[0] ?? deliverablesRaw) as Array<any>;
+      // Deliverables: multi-step ORM queries to avoid TiDB prepared statement issues
+      const cdRows = await db
+        .select({
+          id: campaignDeliverables.id,
+          talentName: campaignDeliverables.talentName,
+          contentType: campaignDeliverables.contentType,
+          dueDate: campaignDeliverables.dueDate,
+          status: campaignDeliverables.status,
+          agreedFee: campaignDeliverables.agreedFee,
+          briefNotes: campaignDeliverables.briefNotes,
+          videoId: campaignDeliverables.videoId,
+          campaignId: campaignDeliverables.campaignId,
+          createdAt: campaignDeliverables.createdAt,
+        })
+        .from(campaignDeliverables)
+        .where(eq(campaignDeliverables.channelId, channelId))
+        .orderBy(desc(campaignDeliverables.createdAt));
 
-      const affLinksRaw = await db.execute(sql`
-        SELECT al.id, al.url, al.commission_type, al.commission_rate, al.is_active, al.notes,
-               c.name AS campaign_name,
-               COALESCE(SUM(afs.clicks), 0) AS total_clicks,
-               COALESCE(SUM(afs.conversions), 0) AS total_conversions,
-               COALESCE(SUM(afs.revenue_generated), 0) AS total_revenue
-        FROM affiliate_links al
-        LEFT JOIN campaigns c ON c.id = al.campaign_id
-        LEFT JOIN affiliate_snapshots afs ON afs.link_id = al.id
-        WHERE al.channel_id = ${channelId}
-        GROUP BY al.id, al.url, al.commission_type, al.commission_rate, al.is_active, al.notes, c.name
-        ORDER BY al.created_at DESC
-      `);
-      const affLinks = ((affLinksRaw as any)[0] ?? affLinksRaw) as Array<any>;
+      // Enrich with campaign + client names
+      const campaignIds = Array.from(new Set(cdRows.map(r => r.campaignId).filter(Boolean))) as number[];
+      const campaignRows = campaignIds.length > 0
+        ? await db.select({ id: campaigns.id, name: campaigns.name, status: campaigns.status, clientId: campaigns.clientId }).from(campaigns).where(inArray(campaigns.id, campaignIds))
+        : [];
+      const clientIds = Array.from(new Set(campaignRows.map(r => r.clientId).filter(Boolean))) as number[];
+      const clientRows = clientIds.length > 0
+        ? await db.select({ id: clients.id, companyName: clients.companyName }).from(clients).where(inArray(clients.id, clientIds))
+        : [];
+      const campaignMap = new Map(campaignRows.map(c => [c.id, c]));
+      const clientMap = new Map(clientRows.map(c => [c.id, c]));
+      const deliverables = cdRows.map(cd => {
+        const camp = campaignMap.get(cd.campaignId!);
+        const cli = camp ? clientMap.get(camp.clientId!) : undefined;
+        return { ...cd, campaign_id: cd.campaignId, campaign_name: camp?.name, campaign_status: camp?.status, client_name: cli?.companyName };
+      });
 
-      const resultsRaw = await db.execute(sql`
-        SELECT tr.*, cd.content_type, cd.due_date, c.name AS campaign_name
-        FROM talent_results tr
-        INNER JOIN campaign_deliverables cd ON cd.id = tr.deliverable_id
-        INNER JOIN campaigns c ON c.id = cd.campaign_id
-        WHERE cd.channel_id = ${channelId}
-        ORDER BY tr.created_at DESC
-      `);
-      const results = ((resultsRaw as any)[0] ?? resultsRaw) as Array<any>;
+      // Affiliate links: multi-step ORM queries
+      const alRows = await db
+        .select()
+        .from(affiliateLinks)
+        .where(eq(affiliateLinks.channelId, channelId))
+        .orderBy(desc(affiliateLinks.createdAt));
+      const alIds = alRows.map(al => al.id);
+      const snapRows = alIds.length > 0
+        ? await db.select({ linkId: affiliateSnapshots.linkId, clicks: affiliateSnapshots.clicks, conversions: affiliateSnapshots.conversions, revenue: affiliateSnapshots.revenueGenerated }).from(affiliateSnapshots).where(inArray(affiliateSnapshots.linkId, alIds))
+        : [];
+      const alCampaignIds = Array.from(new Set(alRows.map(al => al.campaignId).filter(Boolean))) as number[];
+      const alCampaignRows = alCampaignIds.length > 0
+        ? await db.select({ id: campaigns.id, name: campaigns.name }).from(campaigns).where(inArray(campaigns.id, alCampaignIds))
+        : [];
+      const alCampaignMap = new Map(alCampaignRows.map(c => [c.id, c]));
+      const affLinks = alRows.map(al => {
+        const snaps = snapRows.filter(s => s.linkId === al.id);
+        const totalClicks = snaps.reduce((s, r) => s + Number(r.clicks ?? 0), 0);
+        const totalConversions = snaps.reduce((s, r) => s + Number(r.conversions ?? 0), 0);
+        const totalRevenue = snaps.reduce((s, r) => s + Number(r.revenue ?? 0), 0);
+        return { ...al, campaign_name: alCampaignMap.get(al.campaignId!)?.name, total_clicks: totalClicks, total_conversions: totalConversions, total_revenue: totalRevenue };
+      });
+
+      // Talent results: multi-step ORM queries
+      const trRows = await db
+        .select()
+        .from(talentResults)
+        .orderBy(desc(talentResults.createdAt));
+      // Filter to only results whose deliverable belongs to this channel
+      const deliverableIds = cdRows.map(d => d.id);
+      const filteredResults = deliverableIds.length > 0
+        ? trRows.filter(tr => deliverableIds.includes(tr.deliverableId!))
+        : [];
+      const results = filteredResults.map(tr => {
+        const cd = cdRows.find(d => d.id === tr.deliverableId);
+        const camp = cd ? campaignMap.get(cd.campaignId!) : undefined;
+        return { ...tr, content_type: cd?.contentType, due_date: cd?.dueDate, campaign_name: camp?.name };
+      });
 
       // totalViews already computed above from latestVideoStats
 
-      const totalRevenueRaw = await db.execute(sql`
-        SELECT COALESCE(SUM(afs.revenue_generated), 0) AS rev
-        FROM affiliate_links al
-        LEFT JOIN affiliate_snapshots afs ON afs.link_id = al.id
-        WHERE al.channel_id = ${channelId}
-      `);
-      const totalAffiliateRevenue = Number((totalRevenueRaw as any)[0]?.[0]?.rev ?? 0);
+      // Total affiliate revenue already computed from affLinks above
+      const totalAffiliateRevenue = affLinks.reduce((s, al) => s + Number(al.total_revenue ?? 0), 0);
 
       return {
         channel,
@@ -578,39 +607,33 @@ export const affiliateRouter = router({
     const stats = await Promise.all(channels.map(async (ch) => {
       // Total views: sum of latest view_count per video for this channel
       // Total views: fetch all view_counts for channel, deduplicate by latest date in app code
-      const allVcRaw = await db.execute(sql`
-        SELECT vc.video_id, vc.view_count, vc.date
-        FROM view_counts vc
-        INNER JOIN videos v ON v.video_id = vc.video_id
-        WHERE v.channel_id = ${ch.channelId}
-        ORDER BY vc.date DESC
-      `);
-      const allVcRows = ((allVcRaw as any)[0] ?? allVcRaw) as Array<{ video_id: string; view_count: number; date: string }>;
-      const seenVids = new Set<string>();
+      // Total views: ORM-based two-step query
+      const chVideos = await db.select({ videoId: videos.videoId }).from(videos).where(eq(videos.channelId, ch.channelId));
+      const chVideoIds = chVideos.map(v => v.videoId);
       let totalViews = 0;
-      for (const r of allVcRows) {
-        if (!seenVids.has(r.video_id)) {
-          seenVids.add(r.video_id);
-          totalViews += Number(r.view_count ?? 0);
+      if (chVideoIds.length > 0) {
+        const vcAll = await db.select({ videoId: viewCounts.videoId, viewCount: viewCounts.viewCount, date: viewCounts.date }).from(viewCounts).where(inArray(viewCounts.videoId, chVideoIds)).orderBy(desc(viewCounts.date));
+        const seenVids = new Set<string>();
+        for (const r of vcAll) {
+          if (!seenVids.has(r.videoId)) {
+            seenVids.add(r.videoId);
+            totalViews += Number(r.viewCount ?? 0);
+          }
         }
       }
 
-      // Campaign count
-      const campRows = await db.execute(sql`
-        SELECT COUNT(DISTINCT campaign_id) AS cnt
-        FROM campaign_deliverables
-        WHERE channel_id = ${ch.channelId}
-      `);
-      const campaignCount = Number((campRows as any)[0]?.[0]?.cnt ?? 0);
+      // Campaign count: ORM-based
+      const chDeliverables = await db.select({ campaignId: campaignDeliverables.campaignId }).from(campaignDeliverables).where(eq(campaignDeliverables.channelId, ch.channelId));
+      const campaignCount = new Set(chDeliverables.map(d => d.campaignId)).size;
 
-      // Affiliate revenue
-      const affRows = await db.execute(sql`
-        SELECT COALESCE(SUM(afs.revenue_generated), 0) AS rev
-        FROM affiliate_links al
-        LEFT JOIN affiliate_snapshots afs ON afs.link_id = al.id
-        WHERE al.channel_id = ${ch.channelId}
-      `);
-      const affiliateRevenue = Number((affRows as any)[0]?.[0]?.rev ?? 0);
+      // Affiliate revenue: ORM-based
+      const chAffLinks = await db.select({ id: affiliateLinks.id }).from(affiliateLinks).where(eq(affiliateLinks.channelId, ch.channelId));
+      const chAffIds = chAffLinks.map(al => al.id);
+      let affiliateRevenue = 0;
+      if (chAffIds.length > 0) {
+        const revRows = await db.select({ rev: affiliateSnapshots.revenueGenerated }).from(affiliateSnapshots).where(inArray(affiliateSnapshots.linkId, chAffIds));
+        affiliateRevenue = revRows.reduce((s, r) => s + Number(r.rev ?? 0), 0);
+      }
 
       return {
         channelId: ch.channelId,
