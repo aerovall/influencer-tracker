@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { sdk } from "./_core/sdk";
 import { runFullDailySync, generateDailyReport, generateWeeklyReport } from "./syncEngine";
-import { getReportSchedules, getAllVideos, upsertCommentSnapshot } from "./db";
+import { getReportSchedules, getAllVideos, upsertCommentSnapshot, getLatestCommentSnapshotsBulk } from "./db";
 import { scrapeVideoBatch } from "./commentEngine";
 
 // ─── /api/scheduled/daily-sync ────────────────────────────────────────────────
@@ -71,19 +71,37 @@ export async function dailyCommentScrapeHandler(req: Request, res: Response) {
 
     // Get all tracked YouTube video IDs (skip Instagram/TikTok posts)
     const videos = await getAllVideos({ platform: "YouTube" });
+    const today = new Date().toISOString().split("T")[0]!;
     // Strip yt_ prefix for scraping; only include videos with a valid raw ID
-    const videoIds = videos
+    const allRawIds = videos
       .map((v: any) => (v.videoId as string).replace(/^yt_/, ""))
       .filter((id: string) => id.length >= 11);
 
-    if (videoIds.length === 0) {
-      return res.json({ ok: true, scraped: 0, message: "No videos to scrape" });
+    if (allRawIds.length === 0) {
+      return res.json({ ok: true, scraped: 0, skipped: 0, message: "No videos to scrape" });
     }
 
-    console.log(`[CommentScrape] Scraping ${videoIds.length} videos...`);
+    // Pre-fetch existing snapshots in one query to skip already-complete videos
+    const dbVideoIds = allRawIds.map((id: string) => `yt_${id}`);
+    const existingSnapshots = await getLatestCommentSnapshotsBulk(dbVideoIds);
+    const videoIds = allRawIds.filter((rawId: string) => {
+      const snap = existingSnapshots[`yt_${rawId}`];
+      if (!snap) return true; // never scraped — include
+      if (snap.date !== today) return true; // scraped on a previous day — include
+      if (snap.scrapeError) return true; // last scrape errored — retry
+      if (snap.likeCount == null) return true; // incomplete data — retry
+      return false; // already complete today — skip
+    });
+    const skippedCount = allRawIds.length - videoIds.length;
+
+    if (videoIds.length === 0) {
+      console.log(`[CommentScrape] All ${allRawIds.length} videos already scraped today — skipping.`);
+      return res.json({ ok: true, scraped: 0, skipped: skippedCount, message: "All videos already scraped today" });
+    }
+
+    console.log(`[CommentScrape] Scraping ${videoIds.length}/${allRawIds.length} videos (${skippedCount} already complete today)...`);
     const results = await scrapeVideoBatch(videoIds);
 
-    const today = new Date().toISOString().split("T")[0];
     let saved = 0;
     for (const r of results) {
       // r.videoId is the raw 11-char ID; DB uses yt_ prefixed form
@@ -115,8 +133,8 @@ export async function dailyCommentScrapeHandler(req: Request, res: Response) {
       }
     }
 
-    console.log(`[CommentScrape] Complete — scraped ${saved}/${videoIds.length} videos`);
-    return res.json({ ok: true, scraped: saved, total: videoIds.length });
+    console.log(`[CommentScrape] Complete — scraped ${saved}/${videoIds.length} videos, skipped ${skippedCount} already-complete`);
+    return res.json({ ok: true, scraped: saved, skipped: skippedCount, total: allRawIds.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error ? err.stack : undefined;

@@ -95,9 +95,10 @@ interface BulkScrapeJob {
   status: "idle" | "running" | "done" | "error";
   total: number;
   done: number;
+  skipped: number;
   currentVideoId: string | null;
   errors: Array<{ videoId: string; error: string }>;
-  results: Array<{ videoId: string; status: "scraped" | "error"; likeCount?: number | null; commentCount?: string | null }>;
+  results: Array<{ videoId: string; status: "scraped" | "skipped" | "error"; likeCount?: number | null; commentCount?: string | null }>;
   startedAt: number;
   finishedAt: number | null;
 }
@@ -106,9 +107,23 @@ interface BulkScrapeJob {
 let _bulkJob: BulkScrapeJob | null = null;
 function getBulkJob(): BulkScrapeJob {
   if (!_bulkJob) {
-    _bulkJob = { jobId: "", status: "idle", total: 0, done: 0, currentVideoId: null, errors: [], results: [], startedAt: 0, finishedAt: null };
+    _bulkJob = { jobId: "", status: "idle", total: 0, done: 0, skipped: 0, currentVideoId: null, errors: [], results: [], startedAt: 0, finishedAt: null };
   }
   return _bulkJob!;
+}
+
+/**
+ * Returns true if a video already has a complete scrape snapshot for today:
+ * - snapshot exists for today's date
+ * - no scrapeError
+ * - likeCount is non-null (meaning likes were actually fetched)
+ */
+function isCompleteToday(snapshot: { date: string; scrapeError: string | null; likeCount: number | null } | undefined, today: string): boolean {
+  if (!snapshot) return false;
+  if (snapshot.date !== today) return false;
+  if (snapshot.scrapeError) return false;
+  if (snapshot.likeCount == null) return false;
+  return true;
 }
 
 // ─── Per-channel scrape job store ────────────────────────────────────────────
@@ -118,9 +133,10 @@ interface ChannelScrapeJob {
   status: "idle" | "running" | "done" | "error";
   total: number;
   done: number;
+  skipped: number;
   currentVideoId: string | null;
   errors: Array<{ videoId: string; error: string }>;
-  results: Array<{ videoId: string; status: "scraped" | "error"; likeCount?: number | null; commentCount?: string | null }>;
+  results: Array<{ videoId: string; status: "scraped" | "skipped" | "error"; likeCount?: number | null; commentCount?: string | null }>;
   startedAt: number;
   finishedAt: number | null;
 }
@@ -128,7 +144,7 @@ interface ChannelScrapeJob {
 const _channelScrapeJobs = new Map<string, ChannelScrapeJob>();
 function getChannelScrapeJob(channelId: string): ChannelScrapeJob {
   if (!_channelScrapeJobs.has(channelId)) {
-    _channelScrapeJobs.set(channelId, { jobId: "", channelId, status: "idle", total: 0, done: 0, currentVideoId: null, errors: [], results: [], startedAt: 0, finishedAt: null });
+    _channelScrapeJobs.set(channelId, { jobId: "", channelId, status: "idle", total: 0, done: 0, skipped: 0, currentVideoId: null, errors: [], results: [], startedAt: 0, finishedAt: null });
   }
   return _channelScrapeJobs.get(channelId)!;
 }
@@ -354,6 +370,7 @@ const videosRouter = router({
         status: "running",
         total: rawIds.length,
         done: 0,
+        skipped: 0,
         currentVideoId: null,
         errors: [],
         results: [],
@@ -364,12 +381,22 @@ const videosRouter = router({
       // Fire-and-forget background processing
       (async () => {
         const today = todayStr();
+        // Pre-fetch all existing snapshots in one query to decide which to skip
+        const dbVideoIds = rawIds.map((id) => `yt_${id}`);
+        const existingSnapshots = await getLatestCommentSnapshotsBulk(dbVideoIds);
         for (const rawId of rawIds) {
           if (!_bulkJob || _bulkJob.jobId !== jobId) break; // cancelled
+          const dbVideoId = `yt_${rawId}`;
+          // Skip if already scraped successfully today
+          if (isCompleteToday(existingSnapshots[dbVideoId] as any, today)) {
+            _bulkJob.results.push({ videoId: rawId, status: "skipped" });
+            _bulkJob.skipped++;
+            _bulkJob.done++;
+            continue;
+          }
           _bulkJob.currentVideoId = rawId;
           try {
             const result = await scrapeVideoComments(rawId);
-            const dbVideoId = `yt_${rawId}`;
             await upsertCommentSnapshot({
               videoId: dbVideoId,
               date: today,
@@ -438,6 +465,7 @@ const videosRouter = router({
         status: job.status,
         total: job.total,
         done: job.done,
+        skipped: job.skipped,
         currentVideoId: job.currentVideoId,
         errors: job.errors,
         // Return last 20 results to avoid oversized payloads
@@ -510,6 +538,7 @@ const videosRouter = router({
         status: "running",
         total: rawIds.length,
         done: 0,
+        skipped: 0,
         currentVideoId: null,
         errors: [],
         results: [],
@@ -520,13 +549,23 @@ const videosRouter = router({
       // Fire-and-forget background processing
       (async () => {
         const today = todayStr();
+        // Pre-fetch all existing snapshots in one query to decide which to skip
+        const dbVideoIds = rawIds.map((id) => `yt_${id}`);
+        const existingSnapshots = await getLatestCommentSnapshotsBulk(dbVideoIds);
         for (const rawId of rawIds) {
           const current = _channelScrapeJobs.get(input.channelId);
           if (!current || current.jobId !== jobId) break; // cancelled or replaced
+          const dbVideoId = `yt_${rawId}`;
+          // Skip if already scraped successfully today
+          if (isCompleteToday(existingSnapshots[dbVideoId] as any, today)) {
+            current.results.push({ videoId: rawId, status: "skipped" });
+            current.skipped++;
+            current.done++;
+            continue;
+          }
           current.currentVideoId = rawId;
           try {
             const result = await scrapeVideoComments(rawId);
-            const dbVideoId = `yt_${rawId}`;
             await upsertCommentSnapshot({
               videoId: dbVideoId,
               date: today,
@@ -596,6 +635,7 @@ const videosRouter = router({
         status: job.status,
         total: job.total,
         done: job.done,
+        skipped: job.skipped,
         currentVideoId: job.currentVideoId,
         errors: job.errors,
         recentResults: job.results.slice(-10),

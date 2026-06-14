@@ -405,3 +405,13 @@
 - [x] Fix: update fetchChannelVideoStats() to also use page_contents.contents
 - [x] Verify: diagnostic script confirms 100 videos returned with 0 missing IDs/titles/views/durations
 - [x] Verify: all 61 tests still pass
+
+## v2.33 — Efficient Scraping (Skip Already-Complete Videos)
+
+- [x] Add isCompleteToday(snapshot, today) helper — returns true if snapshot exists for today, has no scrapeError, and likeCount is non-null
+- [x] Pre-filter rawIds in startChannelScrape using getLatestCommentSnapshotsBulk — skip videos already complete today
+- [x] Pre-filter rawIds in startBulkScrape using getLatestCommentSnapshotsBulk — skip videos already complete today
+- [x] Pre-filter videoIds in dailyCommentScrapeHandler cron using getLatestCommentSnapshotsBulk — skip videos already complete today
+- [x] Add skipped counter to BulkScrapeJob and ChannelScrapeJob types
+- [x] Add skipped count to job result status responses (channelScrapeStatus, bulkScrapeStatus)
+- [x] Add "skipped" result status to job results array so UI can show why a video was not re-scraped
