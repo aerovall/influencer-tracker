@@ -83,10 +83,33 @@ export default function TalentProfile() {
   const { channelId } = useParams<{ channelId: string }>();
   const [, setLocation] = useLocation();
 
+  // ── All hooks must be called unconditionally before any early returns ──
   const { data, isLoading, error } = trpc.affiliate.talentProfile.useQuery(
     { channelId: channelId ?? "" },
     { enabled: !!channelId }
   );
+
+  const utils = trpc.useUtils();
+  const { data: campaigns = [] } = trpc.campaigns.list.useQuery();
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignForm, setAssignForm] = useState({
+    campaignId: "",
+    contentType: "dedicated_video",
+    dueDate: "",
+    agreedFee: "",
+    currency: "USD",
+    briefNotes: "",
+  });
+
+  const createDeliverable = trpc.deliverables.create.useMutation({
+    onSuccess: () => {
+      utils.affiliate.talentProfile.invalidate({ channelId: channelId ?? "" });
+      setAssignOpen(false);
+      setAssignForm({ campaignId: "", contentType: "dedicated_video", dueDate: "", agreedFee: "", currency: "USD", briefNotes: "" });
+      toast.success("Talent assigned to campaign");
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const chartData = useMemo(() => {
     if (!data?.viewTrend?.length) return null;
@@ -125,6 +148,7 @@ export default function TalentProfile() {
     },
   };
 
+  // ── Early returns (after all hooks) ──
   if (isLoading) return <TalentProfileSkeleton />;
   if (error || !data) {
     return (
@@ -139,29 +163,6 @@ export default function TalentProfile() {
   }
 
   const { channel, totalViews, totalAffiliateRevenue, topVideos, deliverables, affiliateLinks, results } = data;
-
-  // ── Assign to Campaign dialog ──
-  const utils = trpc.useUtils();
-  const { data: campaigns = [] } = trpc.campaigns.list.useQuery();
-  const [assignOpen, setAssignOpen] = useState(false);
-  const [assignForm, setAssignForm] = useState({
-    campaignId: "",
-    contentType: "dedicated_video",
-    dueDate: "",
-    agreedFee: "",
-    currency: "USD",
-    briefNotes: "",
-  });
-
-  const createDeliverable = trpc.deliverables.create.useMutation({
-    onSuccess: () => {
-      utils.affiliate.talentProfile.invalidate({ channelId: channelId ?? "" });
-      setAssignOpen(false);
-      setAssignForm({ campaignId: "", contentType: "dedicated_video", dueDate: "", agreedFee: "", currency: "USD", briefNotes: "" });
-      toast.success("Talent assigned to campaign");
-    },
-    onError: (e) => toast.error(e.message),
-  });
 
   function handleAssignSubmit() {
     const cid = parseInt(assignForm.campaignId);
