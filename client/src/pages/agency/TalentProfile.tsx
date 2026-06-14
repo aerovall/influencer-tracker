@@ -308,10 +308,10 @@ export default function TalentProfile() {
           ) : (
             <div className="space-y-2">
               {topVideos.map((v: any, i: number) => (
-                <div key={v.video_id} className="flex items-center gap-3 rounded-xl border bg-card px-3 py-2.5">
+                <div key={v.videoId ?? v.video_id ?? i} className="flex items-center gap-3 rounded-xl border bg-card px-3 py-2.5">
                   <span className="text-xs font-bold text-muted-foreground/50 w-5 shrink-0 text-center">{i + 1}</span>
-                  {v.thumbnail_url ? (
-                    <img src={v.thumbnail_url} alt={v.title} className="h-10 w-16 rounded object-cover shrink-0" />
+                  {(v.thumbnailUrl ?? v.thumbnail_url) ? (
+                    <img src={v.thumbnailUrl ?? v.thumbnail_url} alt={v.title} className="h-10 w-16 rounded object-cover shrink-0" />
                   ) : (
                     <div className="h-10 w-16 rounded bg-muted shrink-0 flex items-center justify-center">
                       <Video className="h-4 w-4 text-muted-foreground/40" />
@@ -320,13 +320,13 @@ export default function TalentProfile() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate leading-tight">{v.title ?? "Untitled"}</p>
                     <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-0.5"><Eye className="h-3 w-3" />{fmtNum(v.view_count)}</span>
-                      {v.likes > 0 && <span className="flex items-center gap-0.5"><ThumbsUp className="h-3 w-3" />{fmtNum(v.likes)}</span>}
-                      {v.duration_seconds > 0 && <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" />{fmtDuration(v.duration_seconds)}</span>}
+                      <span className="flex items-center gap-0.5"><Eye className="h-3 w-3" />{fmtNum(v.viewCount ?? v.view_count)}</span>
+                      {(v.likes ?? 0) > 0 && <span className="flex items-center gap-0.5"><ThumbsUp className="h-3 w-3" />{fmtNum(v.likes)}</span>}
+                      {(v.durationSeconds ?? v.duration_seconds ?? 0) > 0 && <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" />{fmtDuration(v.durationSeconds ?? v.duration_seconds)}</span>}
                     </div>
                   </div>
                   <a
-                    href={`https://youtube.com/watch?v=${v.video_id}`}
+                    href={`https://youtube.com/watch?v=${v.videoId ?? v.video_id}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground transition-colors"
